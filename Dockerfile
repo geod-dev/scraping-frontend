@@ -6,12 +6,14 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# Keep .next/cache (Turbopack filesystem cache + TypeScript .tsbuildinfo) across
+# builds so recompiles and the type check are incremental instead of cold.
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM base AS runner
 ENV NODE_ENV=production
