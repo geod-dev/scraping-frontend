@@ -173,7 +173,7 @@ function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
           <p className="text-sm font-medium text-slate-900">Run matching</p>
           {firstRun ? (
             <Notice tone="warning">
-              The first run embeds the whole catalog: allow about 1 hour (embedding provider rate limit). Later runs only embed what
+              The first run embeds the whole catalog: allow a few minutes. Later runs only embed what
               changed and are fast.
             </Notice>
           ) : null}

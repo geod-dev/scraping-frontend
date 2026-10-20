@@ -136,7 +136,7 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
                         <p className="mt-0.5 text-xs text-slate-500">{description}</p>
                         {task === "matching" ? (
                           <p className="mt-1 text-xs text-slate-500">
-                            The first run can take about 1 hour (embedding provider limit); later runs are fast.{" "}
+                            The first run embeds the whole catalog and can take a few minutes; later runs are faster.{" "}
                             <Link href="/matching" className="text-indigo-600 hover:text-indigo-500">
                               Matching overview →
                             </Link>

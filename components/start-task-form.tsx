@@ -44,7 +44,7 @@ export function StartTaskForm({ competitorKey, competitorName, task, label, disa
     let message = `Start a ${TASK_NAMES[task]} job for ${competitorName}?`;
     if (task === "matching") {
       message += firstMatchingRun
-        ? " The first run embeds the whole catalog and can take about 1 hour (embedding provider rate limit). Later runs are fast."
+        ? " The first run embeds the whole catalog and can take a few minutes. Later runs are faster."
         : " Only changed product texts are embedded again, so this is usually quick.";
     } else {
       message += retryFailedRunId
