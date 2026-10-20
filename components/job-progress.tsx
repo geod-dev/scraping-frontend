@@ -102,7 +102,8 @@ export function JobProgress({ job }: { job: Job }) {
         <ProgressBar value={percent} tone={job.status === "paused" ? "amber" : "indigo"} />
       </div>
 
-      {progress.steps && progress.steps.length > 0 ? (
+      {/* A single step would only repeat the global label, bar and counters above. */}
+      {progress.steps && progress.steps.length > 1 ? (
         <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {progress.steps.map((step) => (
             <li key={step.name} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">

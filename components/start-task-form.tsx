@@ -69,8 +69,9 @@ export function StartTaskForm({ competitorKey, competitorName, task, label, disa
     });
   }
 
+  // flex-1 / mt-auto keep the button at the bottom when the form fills a stretched card.
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
+    <form onSubmit={submit} className="flex flex-1 flex-col gap-3">
       {task === "matching" ? (
         <fieldset className="space-y-1.5" disabled={disabled || pending}>
           <legend className="text-xs font-medium text-slate-600">Mode</legend>
@@ -106,7 +107,7 @@ export function StartTaskForm({ competitorKey, competitorName, task, label, disa
         </details>
       ) : null}
 
-      <span className="inline-flex flex-col items-start gap-1">
+      <span className="mt-auto inline-flex flex-col items-start gap-1">
         <button type="submit" className={primaryButton} disabled={disabled || pending} title={disabled ? (disabledReason ?? undefined) : undefined}>
           {pending ? "Starting…" : label}
         </button>

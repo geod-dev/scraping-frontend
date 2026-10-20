@@ -76,97 +76,98 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
         <StatCard label="Last price seen" value={formatRelative(competitor.stats.last_price_observed_at)} />
       </section>
 
-      <div className="mt-8 grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <Card
-            title="Current job"
-            description={job ? `Job #${job.id} · ${labelize(job.task)} · started by ${job.requested_by}` : "No job is running for this competitor."}
-            actions={job ? <Link href={`/jobs/${job.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">Open job →</Link> : null}
-          >
-            {job && isActiveJob(job) ? (
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-center gap-3">
-                  <AutoRefresh enabled intervalMs={jobRefreshIntervalMs([job])} />
-                  <JobOrigin job={job} />
-                </div>
-                <JobProgress job={job} />
-              </div>
-            ) : job ? (
-              <DefinitionList
-                items={[
-                  { label: "Status", value: <StatusBadge status={job.status} /> },
-                  { label: "Finished", value: formatDateTime(job.finished_at) },
-                  { label: "Error", value: job.error ?? "—" },
-                ]}
+      <Card
+        className="mt-8"
+        title="Current job"
+        description={
+          job ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>
+                Job #{job.id} · {labelize(job.task)} · started by {job.requested_by}
+              </span>
+              <JobOrigin job={job} />
+            </span>
+          ) : (
+            "No job is running for this competitor."
+          )
+        }
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {job ? <AutoRefresh enabled={isActiveJob(job)} intervalMs={jobRefreshIntervalMs([job])} /> : null}
+            {canPause ? (
+              <ActionButton action={workerControl} input={{ key: competitor.key, action: "pause" }} label="Pause" variant="secondary" />
+            ) : null}
+            {canResume ? (
+              <ActionButton action={workerControl} input={{ key: competitor.key, action: "resume" }} label="Resume" variant="primary" />
+            ) : null}
+            {canStop ? (
+              <ActionButton
+                action={workerControl}
+                input={{ key: competitor.key, action: "stop" }}
+                label="Stop"
+                variant="danger"
+                confirmMessage="Stop the active job for this competitor?"
               />
-            ) : (
-              <p className="text-sm text-slate-500">Idle. Start a task below when you want fresh data.</p>
-            )}
-          </Card>
+            ) : null}
+            {job ? (
+              <Link href={`/jobs/${job.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                Open job →
+              </Link>
+            ) : null}
+          </div>
+        }
+      >
+        {job ? (
+          // Same progress view as the job detail page.
+          <JobProgress job={job} />
+        ) : (
+          <p className="text-sm text-slate-500">Idle. Start a task below when you want fresh data.</p>
+        )}
+      </Card>
 
-          <Card title="Controls" description="Start, pause, resume or stop the worker for this competitor.">
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center gap-2">
-                {canPause ? (
-                  <ActionButton action={workerControl} input={{ key: competitor.key, action: "pause" }} label="Pause" variant="secondary" />
+      {/* One card per task, side by side; they stack on narrow screens. */}
+      <section className={`mt-6 grid gap-4 md:grid-cols-2 ${tasks.length > 2 ? "lg:grid-cols-3" : ""}`}>
+        {tasks.map(({ task, label, description }) => {
+          const availability = worker.tasks?.[task];
+          const allowed = availability ? availability.allowed : true;
+          const reason = availability?.reason ? TASK_UNAVAILABLE_LABELS[availability.reason] ?? labelize(availability.reason) : null;
+          return (
+            // Header and body as grid rows so the body fills the card and the start buttons line up.
+            <Card key={task} title={label} description={description} className="grid grid-rows-[auto_1fr]" padded={false}>
+              <div className="flex h-full flex-col gap-3 p-5">
+                {task === "matching" ? (
+                  <p className="text-xs text-slate-500">
+                    The first run embeds the whole catalog and can take a few minutes; later runs are faster.{" "}
+                    <Link href="/matching" className="text-indigo-600 hover:text-indigo-500">
+                      Matching overview →
+                    </Link>
+                  </p>
                 ) : null}
-                {canResume ? (
-                  <ActionButton action={workerControl} input={{ key: competitor.key, action: "resume" }} label="Resume" variant="primary" />
-                ) : null}
-                {canStop ? (
-                  <ActionButton
-                    action={workerControl}
-                    input={{ key: competitor.key, action: "stop" }}
-                    label="Stop"
-                    variant="danger"
-                    confirmMessage="Stop the active job for this competitor?"
-                  />
-                ) : null}
+                {!allowed && reason ? <p className="text-xs text-amber-700">Unavailable: {reason}</p> : null}
+                <StartTaskForm
+                  competitorKey={competitor.key}
+                  competitorName={competitor.name}
+                  task={task}
+                  label={`Start ${label.toLowerCase()}`}
+                  disabled={!allowed || state !== "idle"}
+                  disabledReason={reason ?? (state !== "idle" ? "The worker is busy" : null)}
+                  firstMatchingRun={
+                    task === "matching" && matchingSummary
+                      ? matchingSummary.eligible_products > 0 && matchingSummary.never_matched >= matchingSummary.eligible_products
+                      : undefined
+                  }
+                />
               </div>
+            </Card>
+          );
+        })}
+      </section>
+      {isReference ? (
+        <p className="mt-2 text-xs text-slate-500">This competitor is the reference catalog for matching: its products are not matched themselves.</p>
+      ) : null}
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {tasks.map(({ task, label, description }) => {
-                  const availability = worker.tasks?.[task];
-                  const allowed = availability ? availability.allowed : true;
-                  const reason = availability?.reason ? TASK_UNAVAILABLE_LABELS[availability.reason] ?? labelize(availability.reason) : null;
-                  return (
-                    <div key={task} className="flex flex-col gap-3 rounded-lg border border-slate-200 p-4">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{label}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-                        {task === "matching" ? (
-                          <p className="mt-1 text-xs text-slate-500">
-                            The first run embeds the whole catalog and can take a few minutes; later runs are faster.{" "}
-                            <Link href="/matching" className="text-indigo-600 hover:text-indigo-500">
-                              Matching overview →
-                            </Link>
-                          </p>
-                        ) : null}
-                        {!allowed && reason ? <p className="mt-2 text-xs text-amber-700">Unavailable: {reason}</p> : null}
-                      </div>
-                      <StartTaskForm
-                        competitorKey={competitor.key}
-                        competitorName={competitor.name}
-                        task={task}
-                        label={`Start ${label.toLowerCase()}`}
-                        disabled={!allowed || state !== "idle"}
-                        disabledReason={reason}
-                        firstMatchingRun={
-                          task === "matching" && matchingSummary
-                            ? matchingSummary.eligible_products > 0 && matchingSummary.never_matched >= matchingSummary.eligible_products
-                            : undefined
-                        }
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              {isReference ? (
-                <p className="text-xs text-slate-500">This competitor is the reference catalog for matching: its products are not matched themselves.</p>
-              ) : null}
-            </div>
-          </Card>
-
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
           {matchingSummary ? (
             <Card
               title="Matching"
