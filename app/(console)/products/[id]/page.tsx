@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DecisionReasons, MatchStatusBadge, ProductCell, ScoreGauge } from "@/components/matching";
 import { PriceChart, type PricePoint } from "@/components/price-chart";
+import { ReadMore } from "@/components/read-more";
 import { ApiUnavailable, Badge, Card, DefinitionList, EmptyState, PageHeader, StatusBadge, Table, Td, Th } from "@/components/ui";
 import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatNumber, formatPrice, formatRelative, labelize } from "@/lib/format";
@@ -126,6 +127,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const chartPoints = toChartPoints(history);
   const images = (product.images ?? []).map(imageUrl).filter((u): u is string => Boolean(u));
   const attributes = attributePairs(product.normalized_attributes);
+  const description = product.description || product.long_description;
 
   return (
     <>
@@ -167,8 +169,87 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         }
       />
 
+      <Card title="Details" className="mb-6">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 2xl:grid-cols-8">
+          {[
+            { label: "Latest price", value: product.latest_price ? formatPrice(product.latest_price.from_price, product.latest_price.currency) : "—" },
+            { label: "Reference", value: product.catalog_reference ? <code className="text-xs">{product.catalog_reference}</code> : "—" },
+            { label: "External ID", value: product.external_id ? <code className="text-xs">{product.external_id}</code> : "—" },
+            { label: "First seen", value: formatDateTime(product.first_seen_at) },
+            { label: "Last seen", value: formatRelative(product.last_seen_at) },
+            { label: "Last price", value: formatRelative(product.last_price_observed_at) },
+            { label: "Missing since", value: product.missing_since ? formatDateTime(product.missing_since) : "—" },
+            { label: "Details updated", value: formatDateTime(product.details_updated_at) },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0">
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{item.label}</dt>
+              <dd className="mt-1 break-words text-sm text-slate-900">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
+          <Card title="Price history" description={chartPoints.length > 0 ? `${chartPoints.length} observation${chartPoints.length > 1 ? "s" : ""}` : undefined}>
+            {historyError ? (
+              <ApiUnavailable message={historyError} />
+            ) : chartPoints.length > 0 ? (
+              <PriceChart points={chartPoints} currency={currency} />
+            ) : (
+              <EmptyState title="No price observations yet" />
+            )}
+          </Card>
+
+          <Card title="Price tiers" description="Latest captured prices, including quantity-based tiers" padded={false}>
+            {product.latest_prices.length > 0 ? (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Quantity</Th>
+                    <Th align="right">Price</Th>
+                    <Th>Basis</Th>
+                    <Th>Tax</Th>
+                    <Th>Observed</Th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {product.latest_prices.map((obs) => (
+                    <tr key={obs.id}>
+                      <Td>
+                        {obs.min_quantity || obs.max_quantity ? (
+                          <span>
+                            {obs.min_quantity ?? "0"}
+                            {obs.max_quantity ? ` – ${obs.max_quantity}${obs.max_inclusive ? "" : " (excl.)"}` : "+"}
+                            {obs.quantity_unit ? ` ${obs.quantity_unit}` : ""}
+                          </span>
+                        ) : obs.quantity ? (
+                          `${obs.quantity}${obs.quantity_unit ? ` ${obs.quantity_unit}` : ""}`
+                        ) : (
+                          "Any"
+                        )}
+                      </Td>
+                      <Td align="right">
+                        <span className="font-medium text-slate-900">{formatPrice(obs.price, obs.currency)}</span>
+                        {obs.price_unit ? <span className="text-xs text-slate-500"> / {obs.price_unit}</span> : null}
+                      </Td>
+                      <Td>{labelize(obs.price_basis)}</Td>
+                      <Td>{labelize(obs.tax_mode)}</Td>
+                      <Td>
+                        <span className="whitespace-nowrap">{formatDateTime(obs.observed_at)}</span>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            ) : (
+              <div className="p-5">
+                <EmptyState title="No prices captured" />
+              </div>
+            )}
+          </Card>
+
+          {/* Matching sits under the price tiers: it compares prices with the Antalis reference. */}
           {product.matching ? (
             <Card
               title="Matching"
@@ -298,74 +379,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             </Card>
           ) : null}
 
-          <Card title="Price history" description={chartPoints.length > 0 ? `${chartPoints.length} observation${chartPoints.length > 1 ? "s" : ""}` : undefined}>
-            {historyError ? (
-              <ApiUnavailable message={historyError} />
-            ) : chartPoints.length > 0 ? (
-              <PriceChart points={chartPoints} currency={currency} />
-            ) : (
-              <EmptyState title="No price observations yet" />
-            )}
-          </Card>
-
-          <Card title="Price tiers" description="Latest captured prices, including quantity-based tiers" padded={false}>
-            {product.latest_prices.length > 0 ? (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>Quantity</Th>
-                    <Th align="right">Price</Th>
-                    <Th>Basis</Th>
-                    <Th>Tax</Th>
-                    <Th>Observed</Th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {product.latest_prices.map((obs) => (
-                    <tr key={obs.id}>
-                      <Td>
-                        {obs.min_quantity || obs.max_quantity ? (
-                          <span>
-                            {obs.min_quantity ?? "0"}
-                            {obs.max_quantity ? ` – ${obs.max_quantity}${obs.max_inclusive ? "" : " (excl.)"}` : "+"}
-                            {obs.quantity_unit ? ` ${obs.quantity_unit}` : ""}
-                          </span>
-                        ) : obs.quantity ? (
-                          `${obs.quantity}${obs.quantity_unit ? ` ${obs.quantity_unit}` : ""}`
-                        ) : (
-                          "Any"
-                        )}
-                      </Td>
-                      <Td align="right">
-                        <span className="font-medium text-slate-900">{formatPrice(obs.price, obs.currency)}</span>
-                        {obs.price_unit ? <span className="text-xs text-slate-500"> / {obs.price_unit}</span> : null}
-                      </Td>
-                      <Td>{labelize(obs.price_basis)}</Td>
-                      <Td>{labelize(obs.tax_mode)}</Td>
-                      <Td>
-                        <span className="whitespace-nowrap">{formatDateTime(obs.observed_at)}</span>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            ) : (
-              <div className="p-5">
-                <EmptyState title="No prices captured" />
-              </div>
-            )}
-          </Card>
-
-          <Card title="Description">
-            {product.description || product.long_description ? (
-              <div className="whitespace-pre-line text-sm leading-relaxed text-slate-700">
-                {product.description ?? product.long_description}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-500">No description available.</p>
-            )}
-          </Card>
-
           {attributes.length > 0 ? (
             <Card title="Attributes">
               <DefinitionList items={attributes} />
@@ -385,36 +398,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             </Card>
           ) : null}
 
-          <Card title="Details">
-            <DefinitionList
-              items={[
-                { label: "Latest price", value: product.latest_price ? formatPrice(product.latest_price.from_price, product.latest_price.currency) : "—" },
-                { label: "Reference", value: product.catalog_reference ? <code className="text-xs">{product.catalog_reference}</code> : "—" },
-                { label: "External ID", value: product.external_id ? <code className="text-xs">{product.external_id}</code> : "—" },
-                { label: "First seen", value: formatDateTime(product.first_seen_at) },
-                { label: "Last seen", value: formatRelative(product.last_seen_at) },
-                { label: "Last price", value: formatRelative(product.last_price_observed_at) },
-                { label: "Missing since", value: product.missing_since ? formatDateTime(product.missing_since) : "—" },
-                { label: "Details updated", value: formatDateTime(product.details_updated_at) },
-              ]}
-            />
-          </Card>
-
-          <Card title="Category path">
-            {product.category_path.length > 0 ? (
-              <ol className="space-y-1.5 text-sm">
-                {product.category_path.map((c, i) => (
-                  <li key={c.id} className="flex items-center gap-2" style={{ paddingLeft: `${i * 0.75}rem` }}>
-                    <span className="text-slate-400">↳</span>
-                    <Link href={`/categories/${c.id}`} className="text-indigo-600 hover:text-indigo-500">
-                      {c.name}
-                    </Link>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="text-sm text-slate-500">Not linked to a category.</p>
-            )}
+          <Card title="Description">
+            {description ? <ReadMore text={description} lines={4} /> : <p className="text-sm text-slate-500">No description available.</p>}
           </Card>
         </div>
       </div>
