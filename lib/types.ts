@@ -270,6 +270,15 @@ export type ProductListItem = {
   normalized_attributes: Record<string, unknown> | null;
   images: unknown[] | null;
   latest_price: PriceSummary | null;
+  // Last price movement of the product (null when its price never changed).
+  price_trend?: PriceTrend | null;
+};
+
+export type PriceTrend = {
+  previous_price: string;
+  // (latest - previous) / previous * 100, on the same quantity basis as `from_price`.
+  change_percent: number;
+  changed_at: string;
 };
 
 export type ProductDetail = ProductListItem & {
@@ -363,6 +372,9 @@ export type ProductBrief = {
   category: string | null;
   status: ProductStatus;
   normalized_attributes?: Record<string, unknown> | null;
+  // Not sent by the API yet: shown as soon as it is.
+  image_url?: string | null;
+  images?: unknown[] | null;
 };
 
 export type MatchBrief = {
@@ -589,4 +601,71 @@ export type DimensionlessProduct = {
 export type DimensionlessPage = Paginated<DimensionlessProduct> & {
   // All products without dimensions of the competitor (before filters), "unknown" = none detected.
   by_product_type: Record<string, number>;
+};
+
+// --- Live console (server-sent events) and overview statistics ---
+
+// Snapshot of what every page shows in the sidebar: sent when the event stream opens and
+// again whenever one of its parts changes.
+export type ConsoleSummary = {
+  // Active jobs (queued, running, paused), newest first.
+  jobs: Job[];
+  competitors: { key: string; name: string; enabled: boolean; worker_state: WorkerState; job_id: number | null }[];
+  matching: { needs_review: number; deprecated: number };
+  notifications: { unread: number; by_level: Record<string, number> };
+};
+
+export type LiveEvent =
+  | { type: "console.summary"; data: ConsoleSummary }
+  // Progress or state of an active job (at most about once per second per job).
+  | { type: "job.updated"; data: Job }
+  // A job reached a final state (succeeded, partial, failed, cancelled, interrupted).
+  | { type: "job.finished"; data: Job }
+  | { type: "notification.created"; data: Notification }
+  // Match counts of a competitor changed (run results, a decision, matches becoming obsolete).
+  | { type: "matching.updated"; data: MatchingSummary }
+  | { type: "competitor.updated"; data: Competitor };
+
+export type LiveEventType = LiveEvent["type"];
+
+export type DailyStats = {
+  // YYYY-MM-DD, in the server's time zone.
+  date: string;
+  observations: number;
+  products_created: number;
+  products_marked_missing: number;
+  price_changes: number;
+  credits_used: number;
+  jobs_succeeded: number;
+  jobs_failed: number;
+  matches_auto: number;
+  matches_validated: number;
+  matches_rejected: number;
+};
+
+export type PricePosition = {
+  competitor_key: string;
+  // Associated pairs (auto_matched or validated) with a comparable price on both sides.
+  pairs: number;
+  // Competitor cheaper / within 1% / pricier than Antalis.
+  cheaper: number;
+  same: number;
+  pricier: number;
+  // Median of (competitor - Antalis) / Antalis * 100.
+  median_gap_percent: number | null;
+};
+
+export type OverviewStats = {
+  days: number;
+  daily: DailyStats[];
+  totals: {
+    observations: number;
+    products_created: number;
+    credits_used: number;
+    price_increases: number;
+    price_decreases: number;
+    jobs: Partial<Record<JobStatus, number>>;
+  };
+  credits: { monthly_limit: number | null; monthly_remaining: number | null; renews_at: string | null };
+  price_position: PricePosition[];
 };

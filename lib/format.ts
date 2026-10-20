@@ -25,13 +25,6 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
-export function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(LOCALE, { day: "2-digit", month: "short", year: "numeric" }).format(date);
-}
-
 export function formatRelative(value: string | null | undefined): string {
   if (!value) return "never";
   const date = new Date(value);
@@ -55,13 +48,15 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${s}s`;
 }
 
-export function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  return `${Math.round(value)}%`;
-}
-
 export function labelize(value: string | null | undefined): string {
   if (!value) return "—";
   const spaced = value.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+// Days elapsed since `value` (null when unknown).
+export function ageInDays(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? null : (Date.now() - time) / 86_400_000;
 }

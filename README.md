@@ -16,10 +16,12 @@ as a percentage.
 ## Stack
 
 - Next.js 16 (App Router, Server Components, Server Actions) + React 19 + TypeScript
-- Tailwind CSS 4
-- Recharts for price history
+- Tailwind CSS 4 + [shadcn/ui](https://ui.shadcn.com) (Radix primitives, sources in `components/ui/`, add more with `npx shadcn@latest add <name>`)
+- [nuqs](https://nuqs.dev) for the filters, bound to the URL and applied live
+- Recharts (through the shadcn chart component) for charts, lucide-react for icons
 
-All data is fetched on the server. The API key never reaches the browser.
+All data is fetched on the server. The API key never reaches the browser: live updates come
+from the API's server-sent event stream (`GET /events`), relayed by the `/api/events` route.
 
 ## Configuration
 
@@ -55,8 +57,11 @@ The image uses Next's `standalone` output and runs as a non-root user on port 30
 ```
 app/            routes (Server Components), actions.ts (Server Actions)
 app/(console)/  dashboard pages with the sidebar layout
+app/api/events  relay of the API's live event stream (SSE)
 app/login/      password login page and its server action
-components/     UI primitives and small client components
+components/ui/  shadcn/ui primitives (generated, owned by the project)
+components/     page building blocks (kit.tsx), filters, live updates, matching views
+hooks/          client hooks used by the shadcn components
 lib/            server-only API client, types, formatters, search-param helpers, auth helpers
 proxy.ts        optional password gate (DASHBOARD_PASSWORD), redirects to /login
 docs/           OpenAPI spec snapshot of the scraper API

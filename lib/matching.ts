@@ -1,4 +1,4 @@
-import type { DeprecatedReason, MatchEventKind, MatchStatus, MatchingMode, TaskUnavailableReason } from "@/lib/types";
+import type { DeprecatedReason, MatchEventKind, MatchStatus, MatchingConfig, MatchingMode, TaskUnavailableReason } from "@/lib/types";
 
 // Labels and helpers for the product matching screens (server and client safe).
 
@@ -107,11 +107,6 @@ export function decisionReasonLabel(code: string, message?: string): string {
   return DECISION_REASON_LABELS[code] ?? message ?? code.replace(/_/g, " ");
 }
 
-// Sub-scores are 0..1 in the API; reviewers read them on the same 0-100 scale as the score.
-export function toScale(value: number | null | undefined): number | null {
-  return value === null || value === undefined ? null : value * 100;
-}
-
 export function formatScore(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return value.toFixed(1).replace(/\.0$/, "");
@@ -127,4 +122,18 @@ export function formatValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(formatValue).join(", ");
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+// Engine thresholds of the automatic association and of the review band, when the
+// configuration exposes them (key names vary by engine version).
+export type Thresholds = { auto: number | null; review: number | null };
+
+export function scoreThresholds(config: MatchingConfig | null | undefined): Thresholds {
+  const find = (word: string) => {
+    const thresholds = config?.thresholds;
+    if (!thresholds) return null;
+    const key = Object.keys(thresholds).find((k) => k.toLowerCase().includes(word) && !k.toLowerCase().includes("gap"));
+    return key ? thresholds[key] : null;
+  };
+  return { auto: find("auto"), review: find("review") };
 }

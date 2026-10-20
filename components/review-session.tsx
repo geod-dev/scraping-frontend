@@ -91,16 +91,16 @@ export function SessionCounter() {
   const toMilestone = stats.today % MILESTONE_EVERY;
   return (
     <span
-      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 shadow-sm"
+      className="inline-flex items-center gap-2 rounded-full bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-xs ring-1 ring-foreground/10"
       title={`Decisions taken on this browser: ${stats.today} today, ${stats.total} in total`}
     >
       <svg viewBox="0 0 20 20" fill="currentColor" className="size-3.5 text-emerald-600" aria-hidden>
         <path fillRule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l3.3 3.29 7.3-7.3a1 1 0 0 1 1.4 0Z" clipRule="evenodd" />
       </svg>
       <span className="tabular-nums">
-        <span className="font-semibold text-slate-900">{stats.today}</span> today
+        <span className="font-semibold text-foreground">{stats.today}</span> today
       </span>
-      <span className="h-1 w-10 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+      <span className="h-1 w-10 overflow-hidden rounded-full bg-muted" aria-hidden>
         <span className="block h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${(toMilestone / MILESTONE_EVERY) * 100}%` }} />
       </span>
     </span>

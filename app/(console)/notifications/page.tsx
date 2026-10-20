@@ -1,16 +1,22 @@
-import Link from "next/link";
+import { CheckCheckIcon, CheckIcon, MailIcon } from "lucide-react";
 import { markAllNotificationsRead, setNotificationRead } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { FilterBar, FilterField, FilterGroup, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
+import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination, StatusBadge } from "@/components/kit";
+import { LiveRefresh } from "@/components/live";
 import { NotificationLinks } from "@/components/notification-links";
-import { ApiUnavailable, Card, EmptyState, Field, FilterBar, PageHeader, Pagination, StatusBadge, inputClass, primaryButton, secondaryButton } from "@/components/ui";
+import { Card } from "@/components/ui/card";
 import { apiFetch, settle } from "@/lib/api";
+import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatDateTime, formatRelative, labelize } from "@/lib/format";
 import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
+import { cn } from "@/lib/utils";
 import type { Competitor, Notification, Paginated, UnreadCount } from "@/lib/types";
 
 export const metadata = { title: "Notifications" };
 
 const PAGE_SIZE = 25;
+const LEVELS = ["info", "success", "warning", "error"] as const;
 const KINDS = [
   "job_started",
   "job_paused",
@@ -29,10 +35,12 @@ const KINDS = [
   "matches_deprecated",
 ] as const;
 
+const LEVEL_DOTS: Record<string, string> = { info: "bg-sky-500", success: "bg-emerald-500", warning: "bg-amber-500", error: "bg-rose-500" };
+
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const unread = boolFlag(sp.unread);
-  const level = oneOf(sp.level, ["info", "success", "warning", "error"] as const);
+  const level = oneOf(sp.level, LEVELS);
   const kind = oneOf(sp.kind, KINDS);
   const competitor = text(sp.competitor, 64);
   const offset = positiveInt(sp.offset, 0);
@@ -48,115 +56,88 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   ]);
 
   const competitorKeys = new Map(competitors.data?.map((c) => [c.id, c.key]));
-  const paging = {
-    unread: unread === undefined ? undefined : unread ? "1" : "0",
-    level,
-    kind,
-    competitor,
-  };
+  const names = new Map(competitors.data?.map((c) => [c.key, c.name]));
+  const values = { unread: unread === undefined ? undefined : unread ? "1" : "0", competitor, kind, level };
+  const chips = filterChips("/notifications", values, [
+    { name: "unread", label: "Read state", format: (v) => (v === "1" ? "Unread" : "Read") },
+    { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
+    { name: "kind", label: "Kind", format: labelize },
+    { name: "level", label: "Level", format: labelize },
+  ]);
+  const clearHref = clearFiltersHref("/notifications", values);
 
   return (
     <>
+      <LiveRefresh on={["notification.created"]} />
       <PageHeader
         title="Notifications"
-        description={unreadCount.data ? `${unreadCount.data.unread} unread` : "Alerts and events from scraping jobs"}
+        description={unreadCount.data ? `${unreadCount.data.unread} unread · alerts and events from the jobs` : "Alerts and events from the jobs"}
         actions={
           <ActionButton
             action={markAllNotificationsRead}
             input={{ competitor }}
             label="Mark all as read"
-            variant="secondary"
+            icon={<CheckCheckIcon />}
             disabled={!unreadCount.data || unreadCount.data.unread === 0}
           />
         }
+        toolbar={
+          <FilterBar>
+            <FilterToggle name="unread" label="Read state" anyLabel="All" options={[{ value: "1", label: "Unread", count: unreadCount.data?.unread || null }, { value: "0", label: "Read" }]} />
+            <FilterSelect name="competitor" label="Competitor" allLabel="All competitors" options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
+            <FilterSheet count={chips.filter((c) => c.key === "kind" || c.key === "level").length} clearHref={clearHref}>
+              <FilterGroup title="Notification">
+                <FilterField label="Level">
+                  <FilterToggle name="level" label="Level" options={LEVELS.map((l) => ({ value: l, label: labelize(l), count: unreadCount.data?.by_level[l] || null }))} />
+                </FilterField>
+                <FilterField label="Kind">
+                  <FilterSelect name="kind" label="Kind" allLabel="Any kind" className="w-full" options={KINDS.map((k) => ({ value: k, label: labelize(k) }))} />
+                </FilterField>
+              </FilterGroup>
+            </FilterSheet>
+            <FilterChips chips={chips} clearHref={clearHref} />
+          </FilterBar>
+        }
       />
-
-      <FilterBar>
-        <Field label="Competitor">
-          <select className={inputClass} name="competitor" defaultValue={competitor ?? ""}>
-            <option value="">All competitors</option>
-            {competitors.data?.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Read state">
-          <select className={inputClass} name="unread" defaultValue={unread === undefined ? "" : unread ? "1" : "0"}>
-            <option value="">All</option>
-            <option value="1">Unread</option>
-            <option value="0">Read</option>
-          </select>
-        </Field>
-        <Field label="Kind">
-          <select className={inputClass} name="kind" defaultValue={kind ?? ""}>
-            <option value="">Any</option>
-            {KINDS.map((k) => (
-              <option key={k} value={k}>
-                {labelize(k)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Level">
-          <select className={inputClass} name="level" defaultValue={level ?? ""}>
-            <option value="">Any</option>
-            <option value="info">Info</option>
-            <option value="success">Success</option>
-            <option value="warning">Warning</option>
-            <option value="error">Error</option>
-          </select>
-        </Field>
-        <div className="flex gap-2">
-          <button type="submit" className={primaryButton}>
-            Apply
-          </button>
-          <Link href="/notifications" className={secondaryButton}>
-            Reset
-          </Link>
-        </div>
-      </FilterBar>
 
       {notifications.error ? <ApiUnavailable message={notifications.error} /> : null}
 
       {notifications.data ? (
         notifications.data.items.length === 0 ? (
-          <EmptyState title="Nothing here">No notifications match these filters.</EmptyState>
+          <EmptyState title="Nothing here">No notification matches these filters.</EmptyState>
         ) : (
           <>
-            <Card padded={false}>
-              <ul className="divide-y divide-slate-100">
+            <Card className="py-0">
+              <ul className="divide-y">
                 {notifications.data.items.map((n) => (
-                  <li key={n.id} className={`flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between ${n.read ? "" : "bg-indigo-50/40"}`}>
-                    <div className="flex min-w-0 gap-3">
-                      <span className={`mt-1.5 size-2 shrink-0 rounded-full ${n.read ? "bg-transparent" : "bg-indigo-500"}`} aria-hidden />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge status={n.level} label={labelize(n.level)} />
-                          <span className={`text-sm ${n.read ? "text-slate-700" : "font-semibold text-slate-900"}`}>{n.title}</span>
-                        </div>
-                        {n.message ? <p className="mt-1 text-sm text-slate-600">{n.message}</p> : null}
-                        <p className="mt-1 text-xs text-slate-400">
-                          {labelize(n.kind)} · {formatRelative(n.created_at)} · {formatDateTime(n.created_at)}
-                        </p>
-                        <NotificationLinks notification={n} competitorKey={competitorKeys.get(n.competitor_id ?? -1)} />
+                  <li key={n.id} className={cn("flex gap-3 px-4 py-3.5", !n.read && "bg-primary/[0.03]")}>
+                    <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.read ? "bg-muted-foreground/25" : LEVEL_DOTS[n.level])} aria-label={n.read ? "Read" : "Unread"} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={cn("text-sm", n.read ? "text-foreground/80" : "font-semibold")}>{n.title}</span>
+                        <StatusBadge status={n.level} label={labelize(n.level)} />
                       </div>
+                      {n.message ? <p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p> : null}
+                      <p className="mt-1 text-xs text-muted-foreground" title={formatDateTime(n.created_at)}>
+                        {labelize(n.kind)} · {formatRelative(n.created_at)}
+                      </p>
+                      <NotificationLinks notification={n} competitorKey={competitorKeys.get(n.competitor_id ?? -1)} />
                     </div>
-                    <div className="shrink-0">
-                      <ActionButton
-                        action={setNotificationRead}
-                        input={{ id: n.id, read: !n.read }}
-                        label={n.read ? "Mark unread" : "Mark read"}
-                        variant="secondary"
-                        className="h-8 px-3 text-xs"
-                      />
-                    </div>
+                    <ActionButton
+                      action={setNotificationRead}
+                      input={{ id: n.id, read: !n.read }}
+                      label={<span className="sr-only">{n.read ? "Mark unread" : "Mark read"}</span>}
+                      icon={n.read ? <MailIcon /> : <CheckIcon />}
+                      title={n.read ? "Mark unread" : "Mark read"}
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                    />
                   </li>
                 ))}
               </ul>
             </Card>
-            <Pagination basePath="/notifications" query={paging} total={notifications.data.total} limit={notifications.data.limit} offset={notifications.data.offset} />
+            <Pagination basePath="/notifications" query={values} total={notifications.data.total} limit={notifications.data.limit} offset={notifications.data.offset} />
           </>
         )
       ) : null}

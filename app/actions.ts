@@ -87,15 +87,6 @@ export async function retryFailedRun(input: { id: number }): Promise<ActionResul
   return run(() => apiFetch<Job>(`/runs/${input.id}/retry-failed`, { method: "POST" }), toJob);
 }
 
-export async function runMatching(input: { key: string; mode: MatchingMode }): Promise<ActionResult> {
-  if (!KEY_PATTERN.test(input.key)) return { ok: false, message: "Invalid competitor key." };
-  if (!MODES.includes(input.mode)) return { ok: false, message: "Unknown matching mode." };
-  return run(
-    () => apiFetch<Job>(`/matching/competitors/${input.key}/run`, { method: "POST", body: { mode: input.mode } }),
-    toJob,
-  );
-}
-
 export async function rerunDeprecated(input: { competitor?: string }): Promise<ActionResult<RerunResult>> {
   if (input.competitor && !KEY_PATTERN.test(input.competitor)) return { ok: false, message: "Invalid competitor key." };
   return run(

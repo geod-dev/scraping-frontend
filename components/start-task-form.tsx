@@ -2,8 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { PlayIcon, Settings2Icon } from "lucide-react";
+import { toast } from "sonner";
 import { startWorker } from "@/app/actions";
-import { inputClass, primaryButton } from "@/components/ui";
+import { useConfirm } from "@/components/confirm";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MATCHING_MODES } from "@/lib/matching";
 import type { MatchingMode, TaskName } from "@/lib/types";
 
@@ -17,8 +26,6 @@ type Props = {
   disabledReason?: string | null;
   // Matching only: no product has been matched yet, so the run embeds the whole catalog.
   firstMatchingRun?: boolean;
-  // Open the created job instead of refreshing the current page.
-  followJob?: boolean;
 };
 
 const TASK_NAMES: Record<TaskName, string> = {
@@ -27,32 +34,33 @@ const TASK_NAMES: Record<TaskName, string> = {
   matching: "matching",
 };
 
-export function StartTaskForm({ competitorKey, competitorName, task, label, disabled, disabledReason, firstMatchingRun, followJob }: Props) {
+// Start button of a task, with its options: the matching mode, or a run whose failed pages
+// alone a catalog sync refetches. Asks for confirmation, then reports the new job in a toast.
+export function StartTaskForm({ competitorKey, competitorName, task, label, disabled, disabledReason, firstMatchingRun }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<MatchingMode>("incremental");
   const [retryRunId, setRetryRunId] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
+  const busy = disabled || pending;
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
+  async function start() {
     const retryFailedRunId = retryRunId.trim() ? Number(retryRunId) : undefined;
     if (retryFailedRunId !== undefined && (!Number.isInteger(retryFailedRunId) || retryFailedRunId <= 0)) {
-      setError("Enter a valid run id.");
+      toast.error("Enter a valid run id.");
       return;
     }
-    let message = `Start a ${TASK_NAMES[task]} job for ${competitorName}?`;
+    let message: string;
     if (task === "matching") {
-      message += firstMatchingRun
-        ? " The first run embeds the whole catalog and can take a few minutes. Later runs are faster."
-        : " Only changed product texts are embedded again, so this is usually quick.";
+      message = firstMatchingRun
+        ? "The first run embeds the whole catalog and can take a few minutes. Later runs are faster."
+        : "Only changed product texts are embedded again, so this is usually quick.";
     } else {
-      message += retryFailedRunId
-        ? ` Only the failed pages of run #${retryFailedRunId} will be fetched again. This will use scraping credits.`
-        : " This will use scraping credits.";
+      message = retryFailedRunId
+        ? `Only the failed pages of run #${retryFailedRunId} will be fetched again. This uses scraping credits.`
+        : "This uses scraping credits.";
     }
-    if (!window.confirm(message)) return;
-    setError(null);
+    if (!(await confirm({ title: `Start a ${TASK_NAMES[task]} for ${competitorName}?`, message, confirmLabel: "Start" }))) return;
     startTransition(async () => {
       const result = await startWorker({
         key: competitorKey,
@@ -61,58 +69,72 @@ export function StartTaskForm({ competitorKey, competitorName, task, label, disa
         retryFailedRunId: task === "catalog_sync" ? retryFailedRunId : undefined,
       });
       if (!result.ok) {
-        setError(result.message);
+        toast.error(result.message);
         return;
       }
-      if (followJob && result.redirectTo) router.push(result.redirectTo);
-      else router.refresh();
+      const jobHref = result.redirectTo;
+      toast.success(`${label}: job started`, jobHref ? { action: { label: "Open job", onClick: () => router.push(jobHref) } } : undefined);
+      router.refresh();
     });
   }
 
-  // flex-1 / mt-auto keep the button at the bottom when the form fills a stretched card.
+  const button = (
+    <Button size="lg" onClick={start} disabled={busy}>
+      {pending ? <Spinner /> : <PlayIcon />}
+      {pending ? "Starting…" : label}
+    </Button>
+  );
+
   return (
-    <form onSubmit={submit} className="flex flex-1 flex-col gap-3">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
       {task === "matching" ? (
-        <fieldset className="space-y-1.5" disabled={disabled || pending}>
-          <legend className="text-xs font-medium text-slate-600">Mode</legend>
-          {MATCHING_MODES.map((m) => (
-            <label key={m.mode} className="flex items-start gap-2 text-sm">
-              <input type="radio" name={`mode-${competitorKey}`} value={m.mode} checked={mode === m.mode} onChange={() => setMode(m.mode)} className="mt-1" />
-              <span>
-                <span className="font-medium text-slate-800">{m.label}</span>
-                <span className="block text-xs text-slate-500">{m.description}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
+        <div className="space-y-1 md:text-right">
+          <ToggleGroup type="single" variant="outline" size="sm" value={mode} onValueChange={(v) => v && setMode(v as MatchingMode)} disabled={busy} aria-label="Matching mode">
+            {MATCHING_MODES.map((m) => (
+              <ToggleGroupItem key={m.mode} value={m.mode} className="px-2.5 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+                {m.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <p className="max-w-80 text-xs text-muted-foreground">{MATCHING_MODES.find((m) => m.mode === mode)?.description}</p>
+        </div>
       ) : null}
 
-      {task === "catalog_sync" ? (
-        <details className="text-xs text-slate-600">
-          <summary className="cursor-pointer select-none">Options</summary>
-          <label className="mt-2 flex flex-col gap-1 font-medium">
-            Only retry the failed pages of run #
-            <input
-              className={`${inputClass} w-36`}
-              type="number"
-              min={1}
-              inputMode="numeric"
-              value={retryRunId}
-              onChange={(e) => setRetryRunId(e.target.value)}
-              placeholder="Run id"
-              disabled={disabled || pending}
-            />
-            <span className="font-normal text-slate-500">Leave empty for a normal full sync.</span>
-          </label>
-        </details>
-      ) : null}
-
-      <span className="mt-auto inline-flex flex-col items-start gap-1">
-        <button type="submit" className={primaryButton} disabled={disabled || pending} title={disabled ? (disabledReason ?? undefined) : undefined}>
-          {pending ? "Starting…" : label}
-        </button>
-        {error ? <span className="max-w-xs text-xs text-rose-700">{error}</span> : null}
-      </span>
-    </form>
+      <div className="flex items-center gap-2">
+        {task === "catalog_sync" ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon-lg" disabled={busy} aria-label="Sync options" title="Options">
+                <Settings2Icon />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 space-y-2">
+              <Label htmlFor={`retry-${competitorKey}`}>Only retry the failed pages of run #</Label>
+              <Input
+                id={`retry-${competitorKey}`}
+                type="number"
+                min={1}
+                inputMode="numeric"
+                value={retryRunId}
+                onChange={(e) => setRetryRunId(e.target.value)}
+                placeholder="Run id"
+              />
+              <p className="text-xs text-muted-foreground">Leave empty for a normal full sync.</p>
+            </PopoverContent>
+          </Popover>
+        ) : null}
+        {disabled && disabledReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0}>{button}</span>
+            </TooltipTrigger>
+            <TooltipContent>{disabledReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          button
+        )}
+      </div>
+      {confirmDialog}
+    </div>
   );
 }

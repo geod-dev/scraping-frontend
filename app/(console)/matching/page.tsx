@@ -1,40 +1,47 @@
 import Link from "next/link";
-import { AutoRefresh } from "@/components/auto-refresh";
-import { isActiveJob, JobOrigin, jobRefreshIntervalMs } from "@/components/job-progress";
-import { MatchStatusBadge, MatchingTabs } from "@/components/matching";
+import { isActiveJob } from "@/components/job-progress";
+import { ApiUnavailable, EmptyState, Notice, PageHeader, Panel, StatusBadge, ToneBadge } from "@/components/kit";
+import { LiveRefresh } from "@/components/live";
+import { LiveJobBar } from "@/components/live-job";
+import { StatusDistribution } from "@/components/matching";
+import { MatchingTabs } from "@/components/matching-tabs";
 import { RerunDeprecatedButton } from "@/components/rerun-deprecated-button";
 import { StartTaskForm } from "@/components/start-task-form";
-import { ApiUnavailable, Badge, Card, EmptyState, Notice, PageHeader, ProgressBar, StatusBadge } from "@/components/ui";
+import { buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiFetch, settle } from "@/lib/api";
-import { formatDateTime, formatNumber, formatRelative, labelize } from "@/lib/format";
-import { MATCH_STATUSES, TASK_UNAVAILABLE_LABELS } from "@/lib/matching";
+import { formatNumber, formatRelative, labelize } from "@/lib/format";
+import { TASK_UNAVAILABLE_LABELS } from "@/lib/matching";
 import { buildQuery } from "@/lib/params";
 import type { MatchingConfig, MatchingSummary } from "@/lib/types";
 
 export const metadata = { title: "Matching" };
 
 export default async function MatchingOverviewPage() {
-  const [summary, config] = await Promise.all([
-    settle(apiFetch<MatchingSummary[]>("/matching/summary")),
-    settle(apiFetch<MatchingConfig>("/matching/config")),
-  ]);
+  const [summary, config] = await Promise.all([settle(apiFetch<MatchingSummary[]>("/matching/summary")), settle(apiFetch<MatchingConfig>("/matching/config"))]);
 
-  const anyActive = summary.data?.some((s) => s.job && isActiveJob(s.job)) ?? false;
-  const totalDeprecated = summary.data?.reduce((sum, s) => sum + s.deprecated, 0) ?? 0;
+  const toReview = summary.data?.reduce((sum, s) => sum + s.needs_review, 0) ?? 0;
+  const deprecated = summary.data?.reduce((sum, s) => sum + s.deprecated, 0) ?? 0;
 
   return (
     <>
+      <LiveRefresh on={["matching.updated", "job.status"]} />
       <PageHeader
         title="Matching"
         description="Each competitor product is associated with its equivalent in the Antalis reference catalog."
+        tabs={<MatchingTabs active="/matching" />}
         actions={
-          <div className="flex items-start gap-3">
-            <AutoRefresh enabled={anyActive} intervalMs={jobRefreshIntervalMs(summary.data?.flatMap((s) => (s.job ? [s.job] : [])) ?? [])} />
-            <RerunDeprecatedButton disabled={totalDeprecated === 0} />
-          </div>
+          <>
+            <RerunDeprecatedButton disabled={deprecated === 0} variant="outline" />
+            {toReview > 0 ? (
+              <Link href="/matching/review" className={buttonVariants({ size: "lg" })}>
+                Review {formatNumber(toReview)} →
+              </Link>
+            ) : null}
+          </>
         }
       />
-      <MatchingTabs active="/matching" />
 
       {config.data && !config.data.configured ? (
         <div className="mb-6">
@@ -48,7 +55,7 @@ export default async function MatchingOverviewPage() {
         summary.data.length === 0 ? (
           <EmptyState title="No competitor to match">Competitors other than Antalis appear here once configured.</EmptyState>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {summary.data.map((s) => (
               <CompetitorMatching key={s.competitor_key} summary={s} />
             ))}
@@ -56,149 +63,147 @@ export default async function MatchingOverviewPage() {
         )
       ) : null}
 
-      {config.data ? (
-        <Card title="Engine" description={`Reference catalog: ${config.data.reference_competitor} · engine ${config.data.engine_version}`} className="mt-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Thresholds</p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {Object.entries(config.data.thresholds).map(([key, value]) => (
-                  <li key={key} className="flex justify-between gap-4">
-                    <span className="text-slate-600">{labelize(key)}</span>
-                    <span className="tabular-nums text-slate-900">{value}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Weights</p>
-              <ul className="mt-2 space-y-1 text-sm">
-                {Object.entries(config.data.weights).map(([profile, weights]) => (
-                  <li key={profile} className="flex justify-between gap-4">
-                    <span className="text-slate-600">{labelize(profile)}</span>
-                    <span className="text-xs tabular-nums text-slate-900">
-                      {Object.entries(weights)
-                        .map(([k, v]) => `${k} ${v}`)
-                        .join(" · ")}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </Card>
-      ) : null}
+      {config.data ? <EngineConfig config={config.data} /> : null}
     </>
   );
 }
 
 function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
-  const job = s.job;
+  const job = s.job && isActiveJob(s.job) ? s.job : null;
   // Nothing matched yet: the run embeds every product text.
   const firstRun = s.eligible_products > 0 && s.never_matched >= s.eligible_products;
-  const reason = s.availability.allowed
-    ? null
-    : (s.availability.message ?? (s.availability.reason ? TASK_UNAVAILABLE_LABELS[s.availability.reason] : "Unavailable"));
-  const listHref = (status?: string) => `/matching/matches?${buildQuery({ competitor: s.competitor_key, status })}`;
+  const reason = s.availability.allowed ? null : (s.availability.message ?? (s.availability.reason ? TASK_UNAVAILABLE_LABELS[s.availability.reason] : "Unavailable"));
+  const listHref = (status: string) => `/matching/matches?${buildQuery({ competitor: s.competitor_key, status })}`;
 
   return (
-    <Card
-      title={s.competitor_name}
-      description={`${formatNumber(s.eligible_products)} eligible products · last computed ${formatRelative(s.last_computed_at)}`}
-      actions={
-        <Link href={`/competitors/${s.competitor_key}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-          Competitor →
-        </Link>
-      }
-    >
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-5 lg:col-span-2">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Figure label="Needs review" value={s.needs_review} href={`/matching/review?competitor=${s.competitor_key}`} tone={s.needs_review ? "warning" : undefined} />
-            <Figure label="Never matched" value={s.never_matched} />
-            <Figure label="Obsolete" value={s.deprecated} href={`/matching/deprecated?competitor=${s.competitor_key}`} tone={s.deprecated ? "warning" : undefined} />
-            <Figure label="Embedding tokens" value={s.embedding_tokens} />
-          </div>
+    <Card className="gap-0 py-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          <Link href={`/competitors/${s.competitor_key}`} className="font-semibold hover:text-primary">
+            {s.competitor_name}
+          </Link>
+          <p className="text-xs text-muted-foreground">
+            {formatNumber(s.eligible_products)} eligible products · last computed {formatRelative(s.last_computed_at)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {s.deprecated > 0 ? (
+            <Link href={`/matching/deprecated?competitor=${s.competitor_key}`} className={buttonVariants({ variant: "outline", size: "lg" })}>
+              {formatNumber(s.deprecated)} obsolete
+            </Link>
+          ) : null}
+          {s.needs_review > 0 ? (
+            <Link href={`/matching/review?competitor=${s.competitor_key}`} className={buttonVariants({ size: "lg" })}>
+              Review {formatNumber(s.needs_review)} →
+            </Link>
+          ) : (
+            <ToneBadge tone="success">Nothing to review</ToneBadge>
+          )}
+        </div>
+      </div>
 
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Matches by status</p>
-            <ul className="flex flex-wrap gap-2">
-              {MATCH_STATUSES.map((status) => (
-                <li key={status}>
-                  <Link href={listHref(status)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 hover:border-indigo-300">
-                    <MatchStatusBadge status={status} />
-                    <span className="text-sm font-semibold tabular-nums text-slate-900">{formatNumber(s.counts[status] ?? 0)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-            {s.outdated_by_config ? (
-              <p className="mt-2 text-xs text-slate-500">
-                {formatNumber(s.outdated_by_config)} results were computed with an older configuration; the next incremental run refreshes them.
-              </p>
-            ) : null}
-          </div>
+      <div className="space-y-4 px-5 py-4">
+        <StatusDistribution counts={s.counts} hrefFor={listHref} />
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            <span className="font-medium text-foreground tabular-nums">{formatNumber(s.never_matched)}</span> never matched
+          </span>
+          {s.outdated_by_config ? (
+            <span title="The next incremental run refreshes them">
+              <span className="font-medium text-foreground tabular-nums">{formatNumber(s.outdated_by_config)}</span> computed with an older configuration
+            </span>
+          ) : null}
+          <span>
+            <span className="font-medium text-foreground tabular-nums">{formatNumber(s.embedding_tokens)}</span> embedding tokens
+          </span>
+        </p>
+      </div>
 
-          {job && isActiveJob(job) ? (
-            <div className="space-y-2 rounded-lg border border-sky-200 bg-sky-50/40 p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="flex flex-wrap items-center gap-2">
-                  <StatusBadge status={job.status} />
-                  <Link href={`/jobs/${job.id}`} className="font-medium text-indigo-600 hover:text-indigo-500">
-                    Job #{job.id}
-                  </Link>
-                  <span className="text-slate-600">{job.step_label ?? labelize(job.step)}</span>
-                  <JobOrigin job={job} />
-                </span>
-                <span className="font-semibold tabular-nums">{Math.round(job.progress.percent ?? 0)}%</span>
-              </div>
-              <ProgressBar value={job.progress.percent} tone={job.status === "paused" ? "amber" : "indigo"} />
-            </div>
+      <div className="flex flex-col gap-3 border-t bg-muted/40 px-5 py-3 md:flex-row md:items-center">
+        <div className="min-w-0 flex-1 text-sm">
+          {job ? (
+            <Link href={`/jobs/${job.id}`} className="block max-w-md">
+              <LiveJobBar job={job} title={`Matching run #${job.id}`} />
+            </Link>
           ) : s.last_job ? (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              Last run:
-              <Link href={`/jobs/${s.last_job.id}`} className="text-indigo-600 hover:text-indigo-500">
+            <p className="flex flex-wrap items-center gap-2 text-muted-foreground">
+              Last run
+              <Link href={`/jobs/${s.last_job.id}`} className="text-primary hover:text-primary/80">
                 #{s.last_job.id}
               </Link>
               <StatusBadge status={s.last_job.status} />
-              <span className="text-slate-500">{formatDateTime(s.last_job.finished_at)}</span>
-              {s.last_job.options?.mode ? <Badge tone="neutral">{labelize(String(s.last_job.options.mode))}</Badge> : null}
+              {formatRelative(s.last_job.finished_at)}
+              {s.last_job.options?.mode ? <ToneBadge>{labelize(String(s.last_job.options.mode))}</ToneBadge> : null}
             </p>
           ) : (
-            <p className="text-sm text-slate-500">No matching run yet.</p>
+            <p className="text-muted-foreground">No matching run yet.</p>
           )}
+          {reason ? <p className="mt-1 text-xs font-medium text-amber-700">Unavailable: {reason}</p> : null}
+          {firstRun ? <p className="mt-1 text-xs text-amber-700">The first run embeds the whole catalog: allow a few minutes.</p> : null}
         </div>
-
-        <div className="space-y-3 rounded-lg border border-slate-200 p-4">
-          <p className="text-sm font-medium text-slate-900">Run matching</p>
-          {firstRun ? (
-            <Notice tone="warning">
-              The first run embeds the whole catalog: allow a few minutes. Later runs only embed what
-              changed and are fast.
-            </Notice>
-          ) : null}
-          {reason ? <p className="text-xs text-amber-700">Unavailable: {reason}</p> : null}
-          <StartTaskForm
-            competitorKey={s.competitor_key}
-            competitorName={s.competitor_name}
-            task="matching"
-            label="Start matching"
-            disabled={!s.availability.allowed}
-            disabledReason={reason}
-            firstMatchingRun={firstRun}
-          />
-        </div>
+        <StartTaskForm
+          competitorKey={s.competitor_key}
+          competitorName={s.competitor_name}
+          task="matching"
+          label="Run matching"
+          disabled={!s.availability.allowed || Boolean(job)}
+          disabledReason={reason ?? (job ? "A matching run is in progress" : null)}
+          firstMatchingRun={firstRun}
+        />
       </div>
     </Card>
   );
 }
 
-function Figure({ label, value, href, tone }: { label: string; value: number; href?: string; tone?: "warning" }) {
-  const body = (
-    <div className={`rounded-lg border px-3 py-2.5 ${tone === "warning" ? "border-amber-200 bg-amber-50/40" : "border-slate-200"} ${href ? "hover:border-indigo-300" : ""}`}>
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{formatNumber(value)}</p>
-    </div>
+// Thresholds as tiles, weights as a profile × signal table.
+function EngineConfig({ config }: { config: MatchingConfig }) {
+  const signals = [...new Set(Object.values(config.weights).flatMap((w) => Object.keys(w)))];
+  return (
+    <Panel title="Engine" description={`Reference catalog ${config.reference_competitor} · engine ${config.engine_version}`} className="mt-6">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Thresholds (score 0-100)</p>
+          <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {Object.entries(config.thresholds).map(([key, value]) => (
+              <div key={key} className="rounded-lg bg-muted/50 px-3 py-2">
+                <dt className="truncate text-xs text-muted-foreground" title={labelize(key)}>
+                  {labelize(key)}
+                </dt>
+                <dd className="text-lg font-semibold tabular-nums">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Weights per product profile</p>
+          <div className="overflow-hidden rounded-lg ring-1 ring-foreground/10">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-3">Profile</TableHead>
+                  {signals.map((signal) => (
+                    <TableHead key={signal} className="text-right">
+                      {labelize(signal)}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(config.weights).map(([profile, weights]) => (
+                  <TableRow key={profile}>
+                    <TableCell className="pl-3 font-medium">{labelize(profile)}</TableCell>
+                    {signals.map((signal) => (
+                      <TableCell key={signal} className="text-right tabular-nums">
+                        {weights[signal] ?? "—"}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </div>
+    </Panel>
   );
-  return href ? <Link href={href}>{body}</Link> : body;
 }

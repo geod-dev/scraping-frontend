@@ -18,13 +18,13 @@ export function ReadMore({ text, lines = 4, className = "" }: { text: string; li
     <div className={className}>
       <p
         ref={ref}
-        className="whitespace-pre-line text-sm text-slate-700"
+        className="whitespace-pre-line text-sm text-foreground/80"
         style={open ? undefined : { display: "-webkit-box", WebkitLineClamp: lines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
       >
         {text}
       </p>
       {overflows || open ? (
-        <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-500">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 text-xs font-medium text-primary hover:text-primary/80">
           {open ? "Show less" : "Read more"}
         </button>
       ) : null}

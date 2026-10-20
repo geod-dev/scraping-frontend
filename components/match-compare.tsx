@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ImageGallery } from "@/components/image-gallery";
 import { ReadMore } from "@/components/read-more";
-import { Badge } from "@/components/ui";
-import { formatPrice, labelize } from "@/lib/format";
+import { ToneBadge } from "@/components/kit";
+import { PriceLine } from "@/components/price";
+import { labelize } from "@/lib/format";
+import { productImages } from "@/lib/images";
 import { formatMeasure, formatValue } from "@/lib/matching";
 import type { Candidate, PriceSummary, ProductBrief, ProductDetail, ProductStatus } from "@/lib/types";
 
@@ -29,18 +31,6 @@ export type CompareSide = {
   partial: boolean;
 };
 
-function imageUrl(item: unknown): string | null {
-  if (typeof item === "string") return item.startsWith("http") ? item : null;
-  if (item && typeof item === "object") {
-    const record = item as Record<string, unknown>;
-    for (const key of ["url", "src", "href"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.startsWith("http")) return value;
-    }
-  }
-  return null;
-}
-
 // Last path segment of the product URL, without a page extension.
 function slugOf(url: string): string | null {
   try {
@@ -63,7 +53,7 @@ export function toSide(detail: ProductDetail | null, brief: ProductBrief | null,
     url: base.url,
     status: base.status,
     category: detail ? detail.category_path.map((c) => c.name) : brief?.category ? [brief.category] : [],
-    images: [...new Set((detail?.images ?? []).map(imageUrl).filter((u): u is string => Boolean(u)))],
+    images: productImages(detail?.images),
     description: detail ? detail.description || detail.long_description : null,
     attributes: (base.normalized_attributes ?? {}) as Record<string, unknown>,
     price: detail?.latest_price ?? null,
@@ -204,22 +194,7 @@ export function SplitComparison({
     },
     {
       label: "Latest price",
-      render: (s) =>
-        s.price ? (
-          <p className="text-sm">
-            <span className="font-semibold text-slate-900">{formatPrice(s.price.from_price, s.price.currency)}</span>
-            {s.price.price_unit ? (
-              <span className="text-xs text-slate-500">
-                {" "}
-                / {s.price.price_unit_quantity && s.price.price_unit_quantity !== "1" ? `${s.price.price_unit_quantity} ` : ""}
-                {s.price.price_unit}
-              </span>
-            ) : null}
-            {s.price.tiers > 1 ? <span className="text-xs text-slate-500"> · {s.price.tiers} tiers</span> : null}
-          </p>
-        ) : (
-          <p className="text-sm text-slate-400">No price captured</p>
-        ),
+      render: (s) => (s.price ? <PriceLine price={s.price} className="text-sm" /> : <p className="text-sm text-muted-foreground">No price captured</p>),
     },
     { label: "Images", render: (s) => <ImageGallery images={s.images} alt={s.title ?? "Product image"} /> },
     {
@@ -230,7 +205,7 @@ export function SplitComparison({
   ];
 
   return (
-    <section id="comparison" className="scroll-mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Side-by-side comparison">
+    <section id="comparison" className="scroll-mt-6 overflow-hidden rounded-xl border bg-card ring-1 ring-foreground/10" aria-label="Side-by-side comparison">
       <div className="flex flex-col md:grid md:grid-cols-2">
         <Cell side="left" header>
           <OriginHeader side={left} kind="Competitor" />
@@ -284,7 +259,7 @@ export function SplitComparison({
             ))}
             {attributes.length > VISIBLE_ATTRIBUTES ? (
               <details className="group">
-                <summary className="cursor-pointer select-none border-t border-slate-100 px-5 py-2.5 text-xs font-medium text-indigo-600 hover:text-indigo-500">
+                <summary className="cursor-pointer select-none border-t border-slate-100 px-5 py-2.5 text-xs font-medium text-primary hover:text-primary/80">
                   <span className="group-open:hidden">Show {attributes.length - VISIBLE_ATTRIBUTES} more attributes</span>
                   <span className="hidden group-open:inline">Show fewer attributes</span>
                 </summary>
@@ -309,8 +284,8 @@ function Cell({ side, header, children }: { side: "left" | "right"; header?: boo
         header
           ? side === "left"
             ? "bg-slate-50"
-            : "border-t border-slate-200 bg-indigo-50/70 md:border-t-0"
-          : cx("border-t border-slate-100", side === "right" && "bg-indigo-50/20"),
+            : "border-t border-slate-200 bg-primary/5 md:border-t-0"
+          : cx("border-t border-slate-100", side === "right" && "bg-primary/[0.02]"),
       )}
     >
       {children}
@@ -349,23 +324,23 @@ function OriginHeader({
     <div className="space-y-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex min-w-0 items-center gap-2 text-sm">
-          <span className={cx("size-2 shrink-0 rounded-full", kind === "Antalis" ? "bg-indigo-500" : "bg-slate-400")} aria-hidden />
+          <span className={cx("size-2 shrink-0 rounded-full", kind === "Antalis" ? "bg-primary" : "bg-slate-400")} aria-hidden />
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{kind}</span>
           {side.origin.siteUrl ? (
-            <a href={side.origin.siteUrl} target="_blank" rel="noreferrer" className="truncate font-medium text-slate-900 hover:text-indigo-600">
+            <a href={side.origin.siteUrl} target="_blank" rel="noreferrer" className="truncate font-medium text-slate-900 hover:text-primary">
               {side.origin.name} ↗
             </a>
           ) : (
             <span className="truncate font-medium text-slate-900">{side.origin.name}</span>
           )}
         </p>
-        {role ? <Badge tone={role.tone}>{role.label}</Badge> : null}
+        {role ? <ToneBadge tone={role.tone}>{role.label}</ToneBadge> : null}
       </div>
       <p className="flex flex-wrap gap-x-3 text-xs">
-        <Link href={`/products/${side.id}`} className="font-medium text-indigo-600 hover:text-indigo-500">
+        <Link href={`/products/${side.id}`} className="font-medium text-primary hover:text-primary/80">
           Product page
         </Link>
-        <a href={side.url} target="_blank" rel="noreferrer" className="font-medium text-indigo-600 hover:text-indigo-500">
+        <a href={side.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:text-primary/80">
           Open on the site ↗
         </a>
         <span className="text-slate-400">#{side.id}</span>
@@ -379,8 +354,8 @@ function NameCell({ side }: { side: CompareSide }) {
     <div className="space-y-1.5">
       <p className="text-base font-semibold leading-snug text-slate-900">{side.title ?? "Untitled product"}</p>
       <div className="flex flex-wrap items-center gap-1.5">
-        {side.brand ? <Badge tone="violet">{side.brand}</Badge> : null}
-        {side.status === "missing" ? <Badge tone="danger">Missing from the catalog</Badge> : null}
+        {side.brand ? <ToneBadge tone="violet">{side.brand}</ToneBadge> : null}
+        {side.status === "missing" ? <ToneBadge tone="danger">Missing from the catalog</ToneBadge> : null}
       </div>
       {side.category.length > 0 ? <p className="text-xs text-slate-500">{side.category.join(" / ")}</p> : null}
     </div>

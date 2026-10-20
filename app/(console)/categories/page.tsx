@@ -1,32 +1,32 @@
 import Link from "next/link";
-import { ApiUnavailable, Badge, Card, EmptyState, FilterBar, Field, PageHeader, StatusBadge, inputClass, primaryButton } from "@/components/ui";
+import { ChevronRightIcon } from "lucide-react";
+import { FilterBar, FilterSelect, FilterToggle } from "@/components/filters";
+import { ApiUnavailable, EmptyState, PageHeader, Panel, StatusBadge, ToneBadge } from "@/components/kit";
 import { apiFetch, settle } from "@/lib/api";
 import { formatNumber, labelize } from "@/lib/format";
 import { boolFlag, text, type SearchParams } from "@/lib/params";
-import type { Competitor, CategoryTreeNode } from "@/lib/types";
+import type { CategoryTreeNode, Competitor } from "@/lib/types";
 
 export const metadata = { title: "Categories" };
 
 function TreeNodes({ nodes, depth = 0 }: { nodes: CategoryTreeNode[]; depth?: number }) {
   return (
-    <ul className={depth === 0 ? "space-y-1" : "mt-1 space-y-1 border-l border-slate-200 pl-4"}>
+    <ul className={depth === 0 ? "space-y-0.5" : "mt-0.5 space-y-0.5 border-l pl-4"}>
       {nodes.map((node) => {
         const hasChildren = (node.children?.length ?? 0) > 0;
         const row = (
           <div className="flex flex-wrap items-center gap-2 py-1">
-            <Link href={`/categories/${node.id}`} className={`text-sm hover:text-indigo-600 ${node.status === "missing" ? "text-slate-400 line-through" : "text-slate-800"}`}>
+            <Link href={`/categories/${node.id}`} className={`text-sm hover:text-primary ${node.status === "missing" ? "text-muted-foreground line-through" : ""}`}>
               {node.name}
             </Link>
             {node.status === "missing" ? <StatusBadge status="missing" /> : null}
-            {node.kind ? <Badge>{labelize(node.kind)}</Badge> : null}
-            <span className="ml-auto text-xs tabular-nums text-slate-500">
-              {formatNumber(node.subtree_product_count)} products
-            </span>
+            {node.kind ? <ToneBadge>{labelize(node.kind)}</ToneBadge> : null}
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatNumber(node.subtree_product_count)} products</span>
           </div>
         );
         if (!hasChildren) {
           return (
-            <li key={node.id} className="pl-5">
+            <li key={node.id} className="pl-6">
               {row}
             </li>
           );
@@ -34,8 +34,8 @@ function TreeNodes({ nodes, depth = 0 }: { nodes: CategoryTreeNode[]; depth?: nu
         return (
           <li key={node.id}>
             <details open={depth < 1} className="group">
-              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
-                <span className="text-slate-400 transition group-open:rotate-90">›</span>
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md px-1 hover:bg-muted/60 [&::-webkit-details-marker]:hidden">
+                <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition group-open:rotate-90" aria-hidden />
                 <div className="min-w-0 flex-1">{row}</div>
               </summary>
               <TreeNodes nodes={node.children ?? []} depth={depth + 1} />
@@ -50,57 +50,38 @@ function TreeNodes({ nodes, depth = 0 }: { nodes: CategoryTreeNode[]; depth?: nu
 export default async function CategoriesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const competitors = await settle(apiFetch<Competitor[]>("/competitors"));
-  const selected = text(sp.competitor, 64) ?? competitors.data?.[0]?.key;
+  const first = competitors.data?.[0]?.key;
+  const selected = text(sp.competitor, 64) ?? first;
   const includeMissing = boolFlag(sp.include_missing) ?? false;
 
-  const tree = selected
-    ? await settle(apiFetch<CategoryTreeNode[]>("/categories/tree", { query: { competitor: selected, include_missing: includeMissing } }))
-    : null;
+  const tree = selected ? await settle(apiFetch<CategoryTreeNode[]>("/categories/tree", { query: { competitor: selected, include_missing: includeMissing } })) : null;
 
   return (
     <>
-      <PageHeader title="Categories" description="The competitor's category tree, with product counts including sub-categories." />
-
-      <FilterBar>
-        <Field label="Competitor">
-          <select className={inputClass} name="competitor" defaultValue={selected ?? ""}>
-            {competitors.data?.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="flex h-9 items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="include_missing" value="1" defaultChecked={includeMissing} className="size-4 rounded border-slate-300 text-indigo-600" />
-          Include missing categories
-        </label>
-        <button type="submit" className={primaryButton}>
-          Apply
-        </button>
-      </FilterBar>
+      <PageHeader
+        title="Categories"
+        description="The category tree of a competitor, with product counts including sub-categories."
+        toolbar={
+          <FilterBar>
+            <FilterSelect name="competitor" label="Competitor" defaultValue={first} options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
+            <FilterToggle name="include_missing" label="Missing categories" anyLabel="Current only" options={[{ value: "1", label: "Include missing" }]} />
+          </FilterBar>
+        }
+      />
 
       {competitors.error ? <ApiUnavailable message={competitors.error} /> : null}
 
-      <Card padded={false}>
+      <Panel>
         {!selected ? (
-          <div className="p-5">
-            <EmptyState title="No competitor selected" />
-          </div>
+          <EmptyState title="No competitor selected" />
         ) : tree?.error ? (
-          <div className="p-5">
-            <ApiUnavailable message={tree.error} />
-          </div>
+          <ApiUnavailable message={tree.error} />
         ) : tree?.data && tree.data.length > 0 ? (
-          <div className="p-5">
-            <TreeNodes nodes={tree.data} />
-          </div>
+          <TreeNodes nodes={tree.data} />
         ) : (
-          <div className="p-5">
-            <EmptyState title="No categories yet">Run a catalog sync for this competitor to discover its categories.</EmptyState>
-          </div>
+          <EmptyState title="No categories yet">Run a catalog sync for this competitor to discover its categories.</EmptyState>
         )}
-      </Card>
+      </Panel>
     </>
   );
 }

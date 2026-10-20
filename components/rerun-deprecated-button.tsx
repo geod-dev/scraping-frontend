@@ -1,73 +1,56 @@
 "use client";
 
-import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCwIcon } from "lucide-react";
+import { toast } from "sonner";
 import { rerunDeprecated } from "@/app/actions";
-import { primaryButton } from "@/components/ui";
-import type { RerunResult } from "@/lib/types";
+import { useConfirm } from "@/components/confirm";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 // Queues one "obsolete only" matching job per competitor having obsolete matches, then
-// reports what was started, refused and skipped.
-export function RerunDeprecatedButton({ competitor, disabled }: { competitor?: string; disabled?: boolean }) {
+// reports what was started, refused and skipped in a toast.
+export function RerunDeprecatedButton({ competitor, disabled, variant = "default" }: { competitor?: string; disabled?: boolean; variant?: "default" | "outline" }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<RerunResult | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
 
-  function run() {
+  async function run() {
     const scope = competitor ? `for ${competitor}` : "for every competitor";
-    if (!window.confirm(`Recompute all obsolete matches ${scope}?`)) return;
-    setError(null);
-    setResult(null);
+    if (!(await confirm({ title: `Recompute all obsolete matches ${scope}?`, message: "One “obsolete only” matching job is queued per competitor.", confirmLabel: "Recompute" }))) return;
     startTransition(async () => {
       const response = await rerunDeprecated({ competitor });
       if (!response.ok) {
-        setError(response.message);
+        toast.error(response.message);
         return;
       }
-      setResult(response.data ?? null);
+      const result = response.data;
+      const started = result?.jobs ?? [];
+      const details = [
+        ...(result?.refused ?? []).map((r) => `Refused · ${r.competitor_key}: ${r.message}`),
+        result?.nothing_to_do.length ? `Nothing to do: ${result.nothing_to_do.join(", ")}` : null,
+      ].filter(Boolean);
+      const description = details.join("\n") || undefined;
+      if (started.length > 0) {
+        toast.success(`${started.length} job${started.length > 1 ? "s" : ""} started: ${started.map((j) => `#${j.id} (${j.competitor_key})`).join(", ")}`, {
+          description,
+          action: { label: "Open", onClick: () => router.push(started.length === 1 ? `/jobs/${started[0].id}` : "/jobs?active=1") },
+        });
+      } else {
+        toast.warning("No job started", { description });
+      }
       router.refresh();
     });
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
-      <button type="button" className={primaryButton} onClick={run} disabled={disabled || pending}>
+    <>
+      <Button size="lg" variant={variant} onClick={run} disabled={disabled || pending}>
+        {pending ? <Spinner /> : <RefreshCwIcon />}
         {pending ? "Starting…" : "Rerun all obsolete"}
-      </button>
-      {error ? <span className="max-w-xs text-xs text-rose-700">{error}</span> : null}
-      {result ? (
-        <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 shadow-sm" role="status">
-          {result.jobs.length > 0 ? (
-            <p>
-              <span className="font-medium text-emerald-700">Started:</span>{" "}
-              {result.jobs.map((job, i) => (
-                <span key={job.id}>
-                  {i > 0 ? ", " : null}
-                  <Link href={`/jobs/${job.id}`} className="text-indigo-600 hover:text-indigo-500">
-                    #{job.id} ({job.competitor_key})
-                  </Link>
-                </span>
-              ))}
-            </p>
-          ) : (
-            <p className="font-medium text-slate-600">No job started.</p>
-          )}
-          {result.refused.length > 0 ? (
-            <ul className="mt-1.5 space-y-0.5">
-              {result.refused.map((r) => (
-                <li key={r.competitor_key}>
-                  <span className="font-medium text-amber-800">Refused · {r.competitor_key}:</span> {r.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {result.nothing_to_do.length > 0 ? (
-            <p className="mt-1.5 text-slate-500">Nothing to do: {result.nothing_to_do.join(", ")}</p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+      </Button>
+      {confirmDialog}
+    </>
   );
 }

@@ -143,3 +143,14 @@ export async function settle<T>(
     };
   }
 }
+
+
+// Opens a server-sent events stream of the API (no timeout: it lives as long as `signal`).
+export async function apiEventStream(path: string, signal: AbortSignal): Promise<Response> {
+  const { apiKey, baseUrl } = readConfig();
+  return fetch(`${baseUrl}${path}`, {
+    headers: { Accept: "text/event-stream", "X-API-Key": apiKey },
+    cache: "no-store",
+    signal,
+  });
+}

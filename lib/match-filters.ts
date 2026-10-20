@@ -12,7 +12,7 @@ export const MATCH_LIST_PATHS: Record<MatchListKind, string> = {
   deprecated: "/matching/deprecated",
 };
 
-const DEFAULT_SORT: Record<MatchListKind, (typeof MATCH_SORTS)[number]> = {
+export const DEFAULT_SORT: Record<MatchListKind, (typeof MATCH_SORTS)[number]> = {
   matches: "updated_at",
   review: "score",
   deprecated: "deprecated_at",

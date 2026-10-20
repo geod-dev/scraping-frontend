@@ -1,24 +1,23 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useEffectEvent, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { rejectMatch, resetMatch, validateMatch } from "@/app/actions";
-import { Modal } from "@/components/modal";
-import {
-  DECIDED_EVENT,
-  MILESTONE_EVERY,
-  prefersReducedMotion,
-  recordReview,
-  useReviewerName,
-  type DecidedDetail,
-  type Outcome,
-} from "@/components/review-session";
-import { SplitButton } from "@/components/split-button";
-import { inputClass, primaryButton, secondaryButton, solidDangerButton, successButton } from "@/components/ui";
+import { DECIDED_EVENT, MILESTONE_EVERY, prefersReducedMotion, recordReview, useReviewerName, type DecidedDetail, type Outcome } from "@/components/review-session";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
+import { Label } from "@/components/ui/label";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import type { ActionResult } from "@/lib/action-result";
-
-const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
+import { cn } from "@/lib/utils";
 
 type Product = { id: number; title: string };
 
@@ -37,7 +36,7 @@ type Props = {
   queue: { index: number; total: number } | null;
 };
 
-// `target` undefined = the engine proposal; otherwise a manual choice, always confirmed.
+// `manual` = another product than the engine proposal, always confirmed.
 type Request =
   | { action: "validate"; target: Product; manual: boolean; withComment: boolean }
   | { action: "reject"; withComment: boolean }
@@ -51,13 +50,10 @@ const BURST = {
   reset: { label: "Sent back to the engine", color: "bg-slate-700", ripple: "bg-slate-400" },
 };
 
-const bigSecondary =
-  "inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
-
-// Decision bar fixed at the bottom of the viewport: validate / reject (with a drop-up for the
+// Decision bar stuck to the bottom of the screen: validate / reject (with a menu for the
 // "with comment" variants), send back to the engine, previous / next. Decisions that need it
-// are confirmed in a modal, which also asks the reviewer name the first time (then remembered
-// on this browser). Shortcuts: V validate, R reject (arrows are handled by KeyboardNav).
+// are confirmed in a dialog, which also asks the reviewer name the first time (then
+// remembered on this browser). Shortcuts: V validate, R reject (arrows: KeyboardNav).
 export function DecisionBar({ productId, proposal, validated, chosen, hasRejections, prev, next, queue }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -69,11 +65,7 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
 
   const busy = pending || burst !== null;
   // What the main green button validates: the previewed product first, else the proposal.
-  const mainTarget: { target: Product; manual: boolean } | null = chosen
-    ? { target: chosen, manual: true }
-    : proposal && !validated
-      ? { target: proposal, manual: false }
-      : null;
+  const mainTarget: { target: Product; manual: boolean } | null = chosen ? { target: chosen, manual: true } : proposal && !validated ? { target: proposal, manual: false } : null;
   const nextHref = next?.href ?? null;
 
   function decide(request: Request, inputs: Inputs) {
@@ -118,10 +110,6 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
     else setDialog(request);
   }
 
-  function askReject(withComment: boolean) {
-    setDialog({ action: "reject", withComment });
-  }
-
   const onShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (dialog || busy) return;
     const key = event.key.toLowerCase();
@@ -130,7 +118,7 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
       askValidate(mainTarget.target, mainTarget.manual, false);
     } else if (key === "r") {
       event.preventDefault();
-      askReject(false);
+      setDialog({ action: "reject", withComment: false });
     }
   });
 
@@ -138,105 +126,104 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
     function onKey(event: KeyboardEvent) {
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true'], dialog")) return;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu']")) return;
       onShortcut(event);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const validateTitle = mainTarget
-    ? `Associate with "${mainTarget.target.title}"`
-    : validated
-      ? "Already validated"
-      : "Nothing to validate: preview an Antalis product first";
+  const validateTitle = mainTarget ? `Associate with "${mainTarget.target.title}"` : validated ? "Already validated" : "Nothing to validate: preview an Antalis product first";
   const progress = queue && queue.total > 0 ? ((queue.index + 1) / queue.total) * 100 : null;
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 shadow-[0_-4px_16px_-6px_rgb(15_23_42/0.12)] backdrop-blur lg:left-60">
+      <div
+        className={cn(
+          "sticky bottom-0 z-20 mt-8 -mb-10 py-3",
+          // Full-bleed background behind the bar (the main column clips the overflow).
+          "before:absolute before:inset-y-0 before:-inset-x-[100vmax] before:-z-10 before:border-t before:bg-background/95 before:shadow-[0_-6px_16px_-10px_rgb(15_23_42/0.2)] before:backdrop-blur",
+        )}
+      >
         {error ? (
-          <div className="flex items-start justify-between gap-3 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800 sm:px-6 lg:px-8" role="alert">
+          <div className="mb-3 flex items-start justify-between gap-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200" role="alert">
             <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="shrink-0 text-xs font-medium text-rose-700 hover:text-rose-900">
+            <Button variant="ghost" size="xs" onClick={() => setError(null)}>
               Dismiss
-            </button>
+            </Button>
           </div>
         ) : null}
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <div className="flex min-w-0 items-center gap-3">
             {prev || next ? (
-              <div className="flex items-center gap-1">
+              <ButtonGroup>
                 <NavButton href={prev?.href ?? null} title={prev?.title ? `Previous: ${prev.title}` : "Previous"} label="Previous" direction="prev" />
                 <NavButton href={nextHref} title={next?.title ? `Next: ${next.title}` : "Next"} label="Next" direction="next" />
-              </div>
+              </ButtonGroup>
             ) : null}
-            <div className="min-w-0 space-y-1 text-xs text-slate-500">
+            <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
               {queue ? (
                 <div className="flex items-center gap-2">
                   <span className="tabular-nums">
-                    <span className="font-semibold text-slate-900">{(queue.index + 1).toLocaleString("en-US")}</span> of{" "}
-                    {queue.total.toLocaleString("en-US")}
+                    <span className="font-semibold text-foreground">{(queue.index + 1).toLocaleString("en-GB")}</span> of {queue.total.toLocaleString("en-GB")}
                   </span>
                   {progress !== null ? (
-                    <span className="h-1 w-16 overflow-hidden rounded-full bg-slate-100" aria-hidden>
-                      <span className="block h-full rounded-full bg-indigo-500" style={{ width: `${Math.max(2, progress)}%` }} />
+                    <span className="h-1 w-16 overflow-hidden rounded-full bg-muted" aria-hidden>
+                      <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(2, progress)}%` }} />
                     </span>
                   ) : null}
                 </div>
               ) : null}
               {nextHref ? (
-                <label className="inline-flex items-center gap-1.5">
-                  <input type="checkbox" checked={advance} onChange={(e) => setAdvance(e.target.checked)} />
+                <Label className="gap-1.5 text-xs font-normal text-muted-foreground">
+                  <Checkbox checked={advance} onCheckedChange={(v) => setAdvance(v === true)} />
                   Open the next product after deciding
-                </label>
+                </Label>
               ) : null}
-              {pending ? <p className="font-medium text-slate-700">Saving…</p> : null}
-              <p className="hidden xl:block">
-                <Kbd>V</Kbd> validate · <Kbd>R</Kbd> reject{prev || next ? <> · <Kbd>←</Kbd> <Kbd>→</Kbd> navigate</> : null}
+              <p className="hidden items-center gap-1 xl:flex">
+                <Kbd>V</Kbd> validate · <Kbd>R</Kbd> reject
+                {prev || next ? (
+                  <>
+                    {" "}
+                    · <Kbd>←</Kbd> <Kbd>→</Kbd> navigate
+                  </>
+                ) : null}
               </p>
             </div>
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-            <button type="button" className={bigSecondary} disabled={busy} onClick={() => setDialog({ action: "reset" })} title="Recomputed by the next matching run">
-              <svg viewBox="0 0 20 20" fill="currentColor" className="size-4 text-slate-500" aria-hidden>
-                <path fillRule="evenodd" d="M15.31 4.69a7 7 0 1 0 1.65 7.3.75.75 0 1 0-1.42-.5 5.5 5.5 0 1 1-1.3-5.74L12.5 7.5h4V3.5l-1.19 1.19Z" clipRule="evenodd" />
-              </svg>
+            <Button variant="outline" className="h-11" disabled={busy} onClick={() => setDialog({ action: "reset" })} title="Recomputed by the next matching run">
+              <RotateCcwIcon />
               <span className="hidden sm:inline">Send back to the engine</span>
               <span className="sm:hidden">Send back</span>
-            </button>
+            </Button>
             {chosen && proposal && !validated ? (
-              <button
-                type="button"
-                className={cx(bigSecondary, "border-emerald-300 text-emerald-800 hover:bg-emerald-50")}
+              <Button
+                variant="outline"
+                className="h-11 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
                 disabled={busy}
                 title={`Associate with the engine proposal "${proposal.title}"`}
                 onClick={() => askValidate(proposal, false, false)}
               >
                 Validate the proposal instead
-              </button>
+              </Button>
             ) : null}
-            <SplitButton
+            <DecisionButton
               tone="danger"
+              icon={<XIcon />}
               label="Reject"
               shortcut="R"
               disabled={busy}
               title="No Antalis equivalent: the proposed product is never proposed again"
-              onClick={() => askReject(false)}
+              onClick={() => setDialog({ action: "reject", withComment: false })}
               menuLabel="More reject options"
-              items={[{ label: "Reject with comment…", hint: "Explain why there is no equivalent", onSelect: () => askReject(true), disabled: busy }]}
+              items={[{ label: "Reject with comment…", hint: "Explain why there is no equivalent", onSelect: () => setDialog({ action: "reject", withComment: true }) }]}
             />
-            <SplitButton
+            <DecisionButton
               tone="success"
-              label={
-                <>
-                  <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden>
-                    <path fillRule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4l3.3 3.29 7.3-7.3a1 1 0 0 1 1.4 0Z" clipRule="evenodd" />
-                  </svg>
-                  {chosen ? "Validate the chosen product" : "Validate"}
-                </>
-              }
+              icon={pending ? <Spinner /> : <CheckIcon />}
+              label={chosen ? "Validate the chosen product" : "Validate"}
               shortcut="V"
               disabled={busy || !mainTarget}
               title={validateTitle}
@@ -247,7 +234,6 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
                   label: "Validate with comment…",
                   hint: name ? `Add a note · reviewer: ${name}` : "Add a note and your name",
                   onSelect: () => mainTarget && askValidate(mainTarget.target, mainTarget.manual, true),
-                  disabled: busy || !mainTarget,
                 },
               ]}
             />
@@ -255,25 +241,86 @@ export function DecisionBar({ productId, proposal, validated, chosen, hasRejecti
         </div>
       </div>
 
-      <Modal open={dialog !== null} onClose={() => setDialog(null)} title={dialog ? dialogTitle(dialog, !name) : ""} description={dialog ? dialogText(dialog, !name) : null}>
-        {dialog ? (
-          <DecisionForm
-            request={dialog}
-            name={name}
-            askName={!name || (dialog.action !== "reset" && dialog.withComment)}
-            hasRejections={hasRejections}
-            onCancel={() => setDialog(null)}
-            onSubmit={(inputs) => {
-              if (inputs.decidedBy && inputs.decidedBy !== name) saveName(inputs.decidedBy);
-              setDialog(null);
-              decide(dialog, inputs);
-            }}
-          />
-        ) : null}
-      </Modal>
+      <Dialog open={dialog !== null} onOpenChange={(open) => (open ? null : setDialog(null))}>
+        <DialogContent className="sm:max-w-md">
+          {dialog ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{dialogTitle(dialog, !name)}</DialogTitle>
+                <DialogDescription>{dialogText(dialog, !name)}</DialogDescription>
+              </DialogHeader>
+              <DecisionForm
+                request={dialog}
+                name={name}
+                askName={!name || (dialog.action !== "reset" && dialog.withComment)}
+                hasRejections={hasRejections}
+                onCancel={() => setDialog(null)}
+                onSubmit={(inputs) => {
+                  if (inputs.decidedBy && inputs.decidedBy !== name) saveName(inputs.decidedBy);
+                  setDialog(null);
+                  decide(dialog, inputs);
+                }}
+              />
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {burst ? <DecisionBurst outcome={burst.outcome} milestone={burst.milestone} leaving={burst.leaving} /> : null}
     </>
+  );
+}
+
+const TONES = {
+  success: "bg-emerald-600 text-white hover:bg-emerald-500",
+  danger: "bg-rose-600 text-white hover:bg-rose-500",
+};
+
+// Large solid button with a menu of variants of the same action (e.g. "Validate with comment").
+function DecisionButton({
+  tone,
+  icon,
+  label,
+  shortcut,
+  onClick,
+  disabled,
+  title,
+  items,
+  menuLabel,
+}: {
+  tone: keyof typeof TONES;
+  icon: ReactNode;
+  label: string;
+  shortcut: string;
+  onClick: () => void;
+  disabled?: boolean;
+  title?: string;
+  items: { label: string; hint?: string; onSelect: () => void }[];
+  menuLabel: string;
+}) {
+  return (
+    <ButtonGroup className="flex-1 sm:flex-none">
+      <Button className={cn("h-11 flex-1 px-5 font-semibold", TONES[tone])} onClick={onClick} disabled={disabled} title={title}>
+        {icon}
+        {label}
+        <Kbd className="hidden border-white/30 bg-white/15 text-white md:inline-flex">{shortcut}</Kbd>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button className={cn("h-11 w-10 border-l border-white/25", TONES[tone])} disabled={disabled} aria-label={menuLabel}>
+            <ChevronDownIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" side="top" className="w-64">
+          {items.map((item) => (
+            <DropdownMenuItem key={item.label} onSelect={item.onSelect} className="flex-col items-start gap-0.5">
+              <span className="font-medium">{item.label}</span>
+              {item.hint ? <span className="text-xs text-muted-foreground">{item.hint}</span> : null}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </ButtonGroup>
   );
 }
 
@@ -285,14 +332,12 @@ function dialogTitle(request: Request, firstTime: boolean): string {
   return firstTime ? "Who is reviewing?" : "Validate the match";
 }
 
-function dialogText(request: Request, firstTime: boolean) {
+function dialogText(request: Request, firstTime: boolean): ReactNode {
   if (request.action === "reject") return "The proposed product will never be proposed again for this competitor product.";
   if (request.action === "reset") return "It is recomputed by the next matching run.";
-  const target = <span className="font-medium text-slate-900">“{request.target.title}”</span>;
+  const target = <span className="font-medium text-foreground">“{request.target.title}”</span>;
   if (request.manual) return <>Associate this competitor product with {target}. It is recorded as a manual choice.</>;
-  if (!request.withComment && firstTime) {
-    return <>Your name is recorded with each decision and remembered on this browser. You can change it later with “Validate with comment”.</>;
-  }
+  if (!request.withComment && firstTime) return <>Your name is recorded with each decision and remembered on this browser. You can change it later with “Validate with comment”.</>;
   return <>Associate this competitor product with {target}.</>;
 }
 
@@ -312,7 +357,7 @@ function DecisionForm({
   onSubmit: (inputs: Inputs) => void;
 }) {
   const withComment = request.action !== "reset" && request.withComment;
-  const tone = request.action === "validate" ? successButton : request.action === "reject" ? solidDangerButton : primaryButton;
+  const submitClass = request.action === "validate" ? TONES.success : request.action === "reject" ? TONES.danger : undefined;
   const submitLabel = request.action === "validate" ? "Validate" : request.action === "reject" ? "Reject" : "Send back";
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -325,46 +370,31 @@ function DecisionForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       {askName ? (
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-          Your name
-          <input
-            className={inputClass}
-            name="decidedBy"
-            defaultValue={name}
-            placeholder="First and last name"
-            maxLength={100}
-            required
-            data-autofocus={!withComment || !name ? true : undefined}
-            autoComplete="name"
-          />
-        </label>
+        <div className="space-y-1.5">
+          <Label htmlFor="decided-by">Your name</Label>
+          <Input id="decided-by" name="decidedBy" defaultValue={name} placeholder="First and last name" maxLength={100} required autoFocus={!withComment || !name} autoComplete="name" />
+        </div>
       ) : null}
       {withComment ? (
-        <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
-          Comment
-          <textarea
-            className={`${inputClass} h-24 py-2`}
-            name="comment"
-            placeholder="Why this decision (kept in the history)"
-            maxLength={1000}
-            data-autofocus={name ? true : undefined}
-          />
-        </label>
+        <div className="space-y-1.5">
+          <Label htmlFor="decision-comment">Comment</Label>
+          <Textarea id="decision-comment" name="comment" placeholder="Why this decision (kept in the history)" maxLength={1000} autoFocus={Boolean(name)} className="h-24" />
+        </div>
       ) : null}
       {request.action === "reset" && hasRejections ? (
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="clearRejections" />
+        <Label className="font-normal">
+          <Checkbox name="clearRejections" />
           Also forget the products rejected by reviewers
-        </label>
+        </Label>
       ) : null}
-      <div className="flex justify-end gap-2 pt-1">
-        <button type="button" className={secondaryButton} onClick={onCancel}>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
-        </button>
-        <button type="submit" className={tone} data-autofocus={!askName && !withComment ? true : undefined}>
+        </Button>
+        <Button type="submit" className={submitClass} autoFocus={!askName && !withComment}>
           {submitLabel}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </form>
   );
 }
@@ -373,32 +403,19 @@ function DecisionForm({
 function DecisionBurst({ outcome, milestone, leaving }: { outcome: Outcome; milestone: number | null; leaving: boolean }) {
   const style = BURST[outcome];
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center lg:pl-60" role="status" aria-live="polite">
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center" role="status" aria-live="polite">
       <div className="flex flex-col items-center gap-3">
         <div className="relative">
-          <span className={cx("review-ripple absolute inset-0 rounded-full", style.ripple)} aria-hidden />
-          {milestone ? <span className={cx("review-ripple absolute inset-0 rounded-full [animation-delay:220ms]", style.ripple)} aria-hidden /> : null}
-          <span className={cx("review-pop relative flex size-20 items-center justify-center rounded-full text-white shadow-lg", style.color)}>
-            {outcome === "validated" ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="size-10" aria-hidden>
-                <path d="M5 12.5l4.5 4.5L19 7.5" />
-              </svg>
-            ) : outcome === "rejected" ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="size-9" aria-hidden>
-                <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="size-9" aria-hidden>
-                <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4.5 9" />
-                <path d="M4.5 4.5V9H9" />
-              </svg>
-            )}
+          <span className={cn("review-ripple absolute inset-0 rounded-full", style.ripple)} aria-hidden />
+          {milestone ? <span className={cn("review-ripple absolute inset-0 rounded-full [animation-delay:220ms]", style.ripple)} aria-hidden /> : null}
+          <span className={cn("review-pop relative flex size-20 items-center justify-center rounded-full text-white shadow-lg", style.color)}>
+            {outcome === "validated" ? <CheckIcon className="size-10" strokeWidth={2.5} /> : outcome === "rejected" ? <XIcon className="size-9" strokeWidth={2.5} /> : <RotateCcwIcon className="size-9" strokeWidth={2.2} />}
           </span>
         </div>
-        <div className="review-pop rounded-full bg-white px-4 py-1.5 text-center text-sm font-medium text-slate-800 shadow-md ring-1 ring-slate-200">
+        <div className="review-pop rounded-full bg-background px-4 py-1.5 text-center text-sm font-medium shadow-md ring-1 ring-foreground/10">
           {style.label}
           {milestone ? <span className="text-emerald-700"> · {milestone} reviews today</span> : null}
-          {leaving ? <span className="font-normal text-slate-500"> · opening the next product…</span> : null}
+          {leaving ? <span className="font-normal text-muted-foreground"> · opening the next product…</span> : null}
         </div>
       </div>
     </div>
@@ -406,30 +423,19 @@ function DecisionBurst({ outcome, milestone, leaving }: { outcome: Outcome; mile
 }
 
 function NavButton({ href, title, label, direction }: { href: string | null; title: string; label: string; direction: "prev" | "next" }) {
-  const icon = (
-    <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden>
-      {direction === "prev" ? (
-        <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 0 1-.02 1.06L8.83 10l3.94 3.71a.75.75 0 1 1-1.04 1.08l-4.5-4.25a.75.75 0 0 1 0-1.08l4.5-4.25a.75.75 0 0 1 1.06.02Z" clipRule="evenodd" />
-      ) : (
-        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clipRule="evenodd" />
-      )}
-    </svg>
-  );
-  const className = "inline-flex size-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition";
+  const Icon = direction === "prev" ? ChevronLeftIcon : ChevronRightIcon;
   if (!href) {
     return (
-      <span className={cx(className, "cursor-not-allowed opacity-40")} aria-disabled title={`No ${label.toLowerCase()} product`}>
-        {icon}
-      </span>
+      <Button variant="outline" size="icon" className="size-10" disabled title={`No ${label.toLowerCase()} product`}>
+        <Icon />
+      </Button>
     );
   }
   return (
-    <Link href={href} className={cx(className, "hover:bg-slate-50")} title={title} aria-label={label}>
-      {icon}
-    </Link>
+    <Button variant="outline" size="icon" className="size-10" asChild>
+      <Link href={href} title={title} aria-label={label}>
+        <Icon />
+      </Link>
+    </Button>
   );
-}
-
-function Kbd({ children }: { children: string }) {
-  return <kbd className="rounded border border-slate-300 bg-slate-50 px-1 font-sans text-[11px] font-medium text-slate-600">{children}</kbd>;
 }

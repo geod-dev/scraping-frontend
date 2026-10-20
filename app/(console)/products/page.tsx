@@ -1,21 +1,32 @@
 import Link from "next/link";
-import { ApiUnavailable, Badge, Card, EmptyState, FilterBar, Field, Pagination, PageHeader, StatusBadge, Table, Td, Th, inputClass, primaryButton, secondaryButton } from "@/components/ui";
+import { LayoutGridIcon, ListIcon } from "lucide-react";
+import { FilterBar, FilterField, FilterGroup, FilterOrder, FilterSearch, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
+import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination, RowChevron, StatusBadge } from "@/components/kit";
+import { LinkRow } from "@/components/link-row";
+import { PriceLine, PriceTrendBadge } from "@/components/price";
+import { ProductCard } from "@/components/product-card";
+import { ProductThumb } from "@/components/product-thumb";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiFetch, settle } from "@/lib/api";
-import { formatNumber, formatPrice, formatRelative } from "@/lib/format";
-import { boolFlag, buildQuery, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
+import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
+import { formatNumber, formatRelative } from "@/lib/format";
+import { firstImage } from "@/lib/images";
+import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
 import type { Competitor, Paginated, ProductFacets, ProductListItem } from "@/lib/types";
 
 export const metadata = { title: "Products" };
 
-const PAGE_SIZE = 25;
-const SORTS = ["title", "reference", "brand", "created_at", "updated_at", "last_seen_at", "last_price_observed_at", "id"] as const;
+// Divisible by 2, 3, 4 and 6: full rows in every grid width.
+const PAGE_SIZE = 24;
+const SORTS = ["last_seen_at", "title", "reference", "brand", "created_at", "updated_at", "last_price_observed_at", "id"] as const;
 const SORT_LABELS: Record<(typeof SORTS)[number], string> = {
+  last_seen_at: "Last seen",
   title: "Title",
   reference: "Reference",
   brand: "Brand",
   created_at: "Created",
   updated_at: "Updated",
-  last_seen_at: "Last seen",
   last_price_observed_at: "Last price",
   id: "ID",
 };
@@ -31,197 +42,165 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const order = oneOf(sp.order, ["asc", "desc"] as const) ?? "desc";
   const offset = positiveInt(sp.offset, 0);
   const categoryId = positiveInt(sp.category_id, 0) || undefined;
-
-  const filters = { competitor, q, status, brand, has_price: hasPrice, sort, order };
+  const view = oneOf(sp.view, ["table"] as const) ?? "grid";
 
   const [competitors, products, facets] = await Promise.all([
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(
       apiFetch<Paginated<ProductListItem>>("/products", {
-        query: { ...filters, category_id: categoryId, include_subcategories: categoryId ? true : undefined, limit: PAGE_SIZE, offset },
+        query: { competitor, q, status, brand, has_price: hasPrice, sort, order, category_id: categoryId, include_subcategories: categoryId ? true : undefined, limit: PAGE_SIZE, offset },
       }),
     ),
     settle(apiFetch<ProductFacets>("/products/facets", { query: { competitor, q, status, category_id: categoryId, include_subcategories: categoryId ? true : undefined } })),
   ]);
 
-  const queryForPaging: Record<string, string | undefined> = {
-    competitor,
+  const names = new Map(competitors.data?.map((c) => [c.key, c.name]));
+  const namesById = new Map(competitors.data?.map((c) => [c.id, c.name]));
+  const values = {
     q,
+    competitor,
     status,
     brand,
     category_id: categoryId ? String(categoryId) : undefined,
     has_price: hasPrice === undefined ? undefined : hasPrice ? "1" : "0",
-    sort,
-    order,
+    sort: sort === "last_seen_at" ? undefined : sort,
+    order: order === "desc" ? undefined : order,
+    view: view === "grid" ? undefined : view,
   };
+  const chips = filterChips("/products", values, [
+    { name: "q", label: "Search" },
+    { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
+    { name: "status", label: "Status", format: (v) => (v === "active" ? "Active" : "Missing") },
+    { name: "has_price", label: "Price", format: (v) => (v === "1" ? "With price" : "Without price") },
+    { name: "brand", label: "Brand" },
+    { name: "category_id", label: "Category", format: (v) => `#${v} and sub-categories` },
+  ]);
+  const clearHref = clearFiltersHref("/products", values, ["sort", "order", "view"]);
+  const sheetCount = chips.filter((c) => !["q", "competitor"].includes(c.key)).length;
 
   return (
     <>
       <PageHeader
         title="Products"
-        description={products.data ? `${formatNumber(products.data.total)} products match these filters` : "Browse and search the catalog"}
+        description={products.data ? `${formatNumber(products.data.total)} products match these filters` : "Browse and search the catalogs"}
+        toolbar={
+          <FilterBar
+            trailing={
+              <>
+                <FilterSelect name="sort" label="Sort by" defaultValue="last_seen_at" options={SORTS.map((s) => ({ value: s, label: SORT_LABELS[s] }))} />
+                <FilterOrder />
+                <FilterToggle
+                  name="view"
+                  label="View"
+                  anyLabel={
+                    <>
+                      <LayoutGridIcon />
+                      <span className="sr-only">Grid</span>
+                    </>
+                  }
+                  options={[
+                    {
+                      value: "table",
+                      label: (
+                        <>
+                          <ListIcon />
+                          <span className="sr-only">Table</span>
+                        </>
+                      ),
+                    },
+                  ]}
+                />
+              </>
+            }
+          >
+            <FilterSearch name="q" label="Search products" placeholder="Title, reference, brand…" />
+            <FilterSelect name="competitor" label="Competitor" allLabel="All competitors" options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
+            <FilterSheet count={sheetCount} clearHref={clearHref}>
+              <FilterGroup title="Catalog">
+                <FilterField label="Status">
+                  <FilterToggle name="status" label="Status" options={[{ value: "active", label: "Active" }, { value: "missing", label: "Missing" }]} />
+                </FilterField>
+                <FilterField label="Price">
+                  <FilterToggle name="has_price" label="Price" options={[{ value: "1", label: "With price" }, { value: "0", label: "Without price" }]} />
+                </FilterField>
+              </FilterGroup>
+              <FilterGroup title="Brand">
+                <FilterField label="Brand" hint={facets.data ? `${facets.data.brands.length} brands for these filters` : undefined}>
+                  <FilterSelect name="brand" label="Brand" allLabel="All brands" className="w-full" options={(facets.data?.brands ?? []).map((b) => ({ value: b.value, label: b.value, count: b.count }))} />
+                </FilterField>
+              </FilterGroup>
+            </FilterSheet>
+            <FilterChips chips={chips} clearHref={clearHref} />
+          </FilterBar>
+        }
       />
 
-      <FilterBar>
-        <Field label="Search">
-          <input className={`${inputClass} w-64`} name="q" defaultValue={q} placeholder="Title, reference, brand…" />
-        </Field>
-        <Field label="Competitor">
-          <select className={inputClass} name="competitor" defaultValue={competitor ?? ""}>
-            <option value="">All competitors</option>
-            {competitors.data?.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Status">
-          <select className={inputClass} name="status" defaultValue={status ?? ""}>
-            <option value="">Any</option>
-            <option value="active">Active</option>
-            <option value="missing">Missing</option>
-          </select>
-        </Field>
-        <Field label="Price">
-          <select className={inputClass} name="has_price" defaultValue={hasPrice === undefined ? "" : hasPrice ? "1" : "0"}>
-            <option value="">Any</option>
-            <option value="1">With price</option>
-            <option value="0">Without price</option>
-          </select>
-        </Field>
-        <Field label="Sort by">
-          <select className={inputClass} name="sort" defaultValue={sort}>
-            {SORTS.map((s) => (
-              <option key={s} value={s}>
-                {SORT_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Order">
-          <select className={inputClass} name="order" defaultValue={order}>
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-          </select>
-        </Field>
-        {brand ? <input type="hidden" name="brand" value={brand} /> : null}
-        {categoryId ? <input type="hidden" name="category_id" value={categoryId} /> : null}
-        <div className="flex gap-2">
-          <button type="submit" className={primaryButton}>
-            Apply
-          </button>
-          <Link href="/products" className={secondaryButton}>
-            Reset
-          </Link>
-        </div>
-      </FilterBar>
+      {products.error ? <ApiUnavailable message={products.error} /> : null}
 
-      {categoryId ? (
-        <div className="-mt-2 mb-5 flex items-center gap-2 text-sm text-slate-600">
-          <Badge tone="info">Category #{categoryId} · incl. sub-categories</Badge>
-          <Link href={`/products?${buildQuery({ ...queryForPaging, category_id: undefined })}`} className="text-xs font-medium text-indigo-600">
-            Clear
-          </Link>
-        </div>
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">
-        <div className="min-w-0">
-          {products.error ? <ApiUnavailable message={products.error} /> : null}
-
-          {products.data ? (
-            products.data.items.length === 0 ? (
-              <EmptyState title="No products found">
-                Products appear here once a catalog sync has run. Try clearing filters if you expected results.
-              </EmptyState>
-            ) : (
-              <>
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                  <Table>
-                    <thead>
-                      <tr>
-                        <Th>Product</Th>
-                        <Th>Reference</Th>
-                        <Th>Brand</Th>
-                        <Th>Status</Th>
-                        <Th align="right">Price</Th>
-                        <Th>Last seen</Th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {products.data.items.map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-50">
-                          <Td>
-                            <Link href={`/products/${p.id}`} className="line-clamp-2 max-w-md font-medium text-indigo-600 hover:text-indigo-500">
-                              {p.title ?? "Untitled product"}
-                            </Link>
-                          </Td>
-                          <Td>
-                            <code className="text-xs text-slate-600">{p.catalog_reference ?? p.external_id ?? "—"}</code>
-                          </Td>
-                          <Td>{p.brand ?? "—"}</Td>
-                          <Td>
-                            <StatusBadge status={p.status} />
-                          </Td>
-                          <Td align="right">
-                            {p.latest_price ? (
-                              <div>
-                                <div className="font-medium text-slate-900">{formatPrice(p.latest_price.from_price, p.latest_price.currency)}</div>
-                                {p.latest_price.tiers > 1 ? <div className="text-xs text-slate-500">{p.latest_price.tiers} tiers</div> : null}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </Td>
-                          <Td>
-                            <span className="whitespace-nowrap text-slate-600">{formatRelative(p.last_seen_at)}</span>
-                          </Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </div>
-                <Pagination basePath="/products" query={queryForPaging} total={products.data.total} limit={products.data.limit} offset={products.data.offset} />
-              </>
-            )
-          ) : null}
-        </div>
-
-        <aside className="space-y-4">
-          <Card title="Brands" description={facets.data ? `${facets.data.brands.length} shown` : undefined} padded={false}>
-            {facets.error ? (
-              <div className="p-4 text-xs text-rose-700">{facets.error}</div>
-            ) : facets.data && facets.data.brands.length > 0 ? (
-              <ul className="max-h-96 divide-y divide-slate-100 overflow-y-auto">
-                {facets.data.brands.slice(0, 40).map((b) => {
-                  const active = brand === b.value;
-                  return (
-                    <li key={b.value}>
-                      <Link
-                        href={`/products?${buildQuery({ ...queryForPaging, brand: b.value })}`}
-                        className={`flex items-center justify-between px-4 py-2 text-sm ${active ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <span className="truncate">{b.value}</span>
-                        <span className="ml-2 tabular-nums text-xs text-slate-500">{formatNumber(b.count)}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
+      {products.data ? (
+        products.data.items.length === 0 ? (
+          <EmptyState title="No products found">Products appear once a catalog sync has run. Try removing filters if you expected results.</EmptyState>
+        ) : (
+          <>
+            {view === "grid" ? (
+              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
+                {products.data.items.map((p) => (
+                  <li key={p.id}>
+                    <ProductCard product={p} competitor={namesById.get(p.competitor_id)} />
+                  </li>
+                ))}
               </ul>
             ) : (
-              <p className="p-4 text-xs text-slate-500">No brand facets for these filters.</p>
+              <Card className="py-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pl-4">Product</TableHead>
+                      <TableHead>Competitor</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Price</TableHead>
+                      <TableHead>Last seen</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {products.data.items.map((p) => (
+                      <LinkRow key={p.id} href={`/products/${p.id}`}>
+                        <TableCell className="pl-4">
+                          <div className="flex min-w-0 max-w-lg items-center gap-3">
+                            <ProductThumb src={firstImage(p.images)} />
+                            <div className="min-w-0">
+                              <Link href={`/products/${p.id}`} className="line-clamp-2 font-medium whitespace-normal hover:text-primary">
+                                {p.title ?? "Untitled product"}
+                              </Link>
+                              <p className="text-xs text-muted-foreground">
+                                {[p.brand, p.catalog_reference ?? p.external_id].filter(Boolean).join(" · ") || "—"}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{namesById.get(p.competitor_id) ?? "—"}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={p.status} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex flex-col items-end gap-0.5">
+                            <PriceLine price={p.latest_price} />
+                            <PriceTrendBadge trend={p.price_trend} currency={p.latest_price?.currency} />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{formatRelative(p.last_seen_at)}</TableCell>
+                        <RowChevron />
+                      </LinkRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Card>
             )}
-            {brand ? (
-              <div className="border-t border-slate-100 p-3">
-                <Link href={`/products?${buildQuery({ ...queryForPaging, brand: undefined })}`} className="text-xs font-medium text-indigo-600">
-                  Clear brand filter ({brand})
-                </Link>
-              </div>
-            ) : null}
-          </Card>
-        </aside>
-      </div>
+            <Pagination basePath="/products" query={values} total={products.data.total} limit={products.data.limit} offset={products.data.offset} />
+          </>
+        )
+      ) : null}
     </>
   );
 }

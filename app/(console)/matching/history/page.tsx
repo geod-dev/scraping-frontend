@@ -1,11 +1,15 @@
-import Link from "next/link";
-import { MatchEventList, MatchingTabs } from "@/components/matching";
-import { ApiUnavailable, Card, EmptyState, Field, FilterBar, PageHeader, Pagination, inputClass, primaryButton, secondaryButton } from "@/components/ui";
+import { FilterBar, FilterField, FilterGroup, FilterNumber, FilterSearch, FilterSelect, FilterSheet } from "@/components/filters";
+import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination } from "@/components/kit";
+import { LiveRefresh } from "@/components/live";
+import { MatchEventList } from "@/components/matching";
+import { MatchingTabs } from "@/components/matching-tabs";
+import { Card } from "@/components/ui/card";
 import { apiFetch, settle } from "@/lib/api";
+import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatNumber } from "@/lib/format";
 import { MATCH_EVENTS, MATCH_EVENT_LABELS } from "@/lib/matching";
 import { oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
-import type { Competitor, MatchEvent, Paginated } from "@/lib/types";
+import type { Competitor, MatchEvent, MatchEventKind, Paginated } from "@/lib/types";
 
 export const metadata = { title: "Matching history" };
 
@@ -29,61 +33,45 @@ export default async function MatchingHistoryPage({ searchParams }: { searchPara
     ),
   ]);
 
-  const paging = {
-    competitor,
-    product_id: productId ? String(productId) : undefined,
-    event,
-    job_id: jobId ? String(jobId) : undefined,
-    actor,
-  };
+  const names = new Map(competitors.data?.map((c) => [c.key, c.name]));
+  const values = { competitor, event, product_id: productId ? String(productId) : undefined, job_id: jobId ? String(jobId) : undefined, actor };
+  const chips = filterChips("/matching/history", values, [
+    { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
+    { name: "event", label: "Event", format: (v) => MATCH_EVENT_LABELS[v as MatchEventKind] ?? v },
+    { name: "product_id", label: "Product", format: (v) => `#${v}` },
+    { name: "job_id", label: "Job", format: (v) => `#${v}` },
+    { name: "actor", label: "Actor" },
+  ]);
+  const clearHref = clearFiltersHref("/matching/history", values);
 
   return (
     <>
+      <LiveRefresh on={["matching.updated"]} />
       <PageHeader
         title="Matching history"
-        description={events.data ? `${formatNumber(events.data.total)} events` : "Every computation and decision on the matches"}
+        description={events.data ? `${formatNumber(events.data.total)} events: every computation and decision on the matches` : "Every computation and decision on the matches"}
+        tabs={<MatchingTabs active="/matching/history" />}
+        toolbar={
+          <FilterBar>
+            <FilterSelect name="competitor" label="Competitor" allLabel="All competitors" options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
+            <FilterSelect name="event" label="Event" allLabel="All events" options={MATCH_EVENTS.map((e) => ({ value: e, label: MATCH_EVENT_LABELS[e] }))} />
+            <FilterSheet count={chips.filter((c) => ["product_id", "job_id", "actor"].includes(c.key)).length} clearHref={clearHref}>
+              <FilterGroup title="Narrow down">
+                <FilterField label="Actor" hint="“engine” or a reviewer name">
+                  <FilterSearch name="actor" label="Actor" placeholder="engine, a reviewer…" className="w-full" />
+                </FilterField>
+                <FilterField label="Competitor product ID">
+                  <FilterNumber name="product_id" label="Product ID" min={1} className="w-full" />
+                </FilterField>
+                <FilterField label="Matching job ID">
+                  <FilterNumber name="job_id" label="Job ID" min={1} className="w-full" />
+                </FilterField>
+              </FilterGroup>
+            </FilterSheet>
+            <FilterChips chips={chips} clearHref={clearHref} />
+          </FilterBar>
+        }
       />
-      <MatchingTabs active="/matching/history" />
-
-      <FilterBar>
-        <Field label="Competitor">
-          <select className={inputClass} name="competitor" defaultValue={competitor ?? ""}>
-            <option value="">All competitors</option>
-            {competitors.data?.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Event">
-          <select className={inputClass} name="event" defaultValue={event ?? ""}>
-            <option value="">Any</option>
-            {MATCH_EVENTS.map((e) => (
-              <option key={e} value={e}>
-                {MATCH_EVENT_LABELS[e]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Product ID">
-          <input className={`${inputClass} w-32`} name="product_id" type="number" min={1} defaultValue={productId ?? ""} />
-        </Field>
-        <Field label="Job ID">
-          <input className={`${inputClass} w-28`} name="job_id" type="number" min={1} defaultValue={jobId ?? ""} />
-        </Field>
-        <Field label="Actor">
-          <input className={`${inputClass} w-40`} name="actor" defaultValue={actor} placeholder="e.g. engine, alice" />
-        </Field>
-        <div className="flex gap-2">
-          <button type="submit" className={primaryButton}>
-            Apply
-          </button>
-          <Link href="/matching/history" className={secondaryButton}>
-            Reset
-          </Link>
-        </div>
-      </FilterBar>
 
       {events.error ? <ApiUnavailable message={events.error} /> : null}
 
@@ -92,10 +80,10 @@ export default async function MatchingHistoryPage({ searchParams }: { searchPara
           <EmptyState title="No events">No matching event matches these filters.</EmptyState>
         ) : (
           <>
-            <Card padded={false}>
+            <Card className="py-0">
               <MatchEventList events={events.data.items} showProduct />
             </Card>
-            <Pagination basePath="/matching/history" query={paging} total={events.data.total} limit={events.data.limit} offset={events.data.offset} />
+            <Pagination basePath="/matching/history" query={values} total={events.data.total} limit={events.data.limit} offset={events.data.offset} />
           </>
         )
       ) : null}

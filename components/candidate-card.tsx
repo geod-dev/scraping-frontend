@@ -1,12 +1,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ProductCell, ScoreGauge, SubScore } from "@/components/matching";
-import { Badge } from "@/components/ui";
+import { ToneBadge } from "@/components/kit";
+import { ProductCell, ScoreRing, SubScore } from "@/components/matching";
 import { labelize } from "@/lib/format";
-import { formatMeasure, formatValue } from "@/lib/matching";
+import { formatMeasure, formatValue, type Thresholds } from "@/lib/matching";
 import type { Candidate, Flag } from "@/lib/types";
-
-const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
+import { cn } from "@/lib/utils";
 
 const FEATURE_STYLES = {
   match: "bg-emerald-50 text-emerald-800 ring-emerald-200",
@@ -21,40 +20,40 @@ function percent(value: number | null | undefined): string | null {
 // Score breakdown of one Antalis candidate for a competitor product: final score, the three
 // sub-scores with their weights, compared measures, characteristics, exclusions and flags.
 // `current` marks the candidate shown in the side-by-side comparison of the review screen.
-export function CandidateCard({ candidate: c, action, current }: { candidate: Candidate; action?: ReactNode; current?: boolean }) {
+export function CandidateCard({ candidate: c, action, current, thresholds }: { candidate: Candidate; action?: ReactNode; current?: boolean; thresholds?: Thresholds }) {
   const differing = new Set(c.differences.map((d) => `${d.kind}:${d.field}`));
   const featureDiffs = c.differences.filter((d) => d.kind === "feature" && !c.features.some((f) => f.key === d.field));
 
   return (
     <article
-      className={cx(
-        "rounded-xl border bg-white p-4 shadow-sm",
-        current && "ring-2 ring-indigo-500/25",
-        c.is_associated ? "border-emerald-300" : c.is_proposed ? "border-indigo-300" : c.excluded ? "border-rose-200" : "border-slate-200",
+      className={cn(
+        "rounded-xl border bg-card p-4 shadow-xs",
+        current && "ring-2 ring-primary/25",
+        c.is_associated ? "border-emerald-300" : c.is_proposed ? "border-primary/40" : c.excluded ? "border-rose-200" : "border-border",
       )}
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
             {c.rank ?? "×"}
           </span>
           <div className="min-w-0 space-y-1">
             <ProductCell product={c.antalis_product} />
             <div className="flex flex-wrap gap-1">
-              {c.is_associated ? <Badge tone="success">Associated</Badge> : null}
-              {c.is_proposed ? <Badge tone="info">Proposed</Badge> : null}
-              {c.rejected_by_human ? <Badge tone="danger">Rejected by a reviewer</Badge> : null}
-              {c.excluded ? <Badge tone="danger">Excluded</Badge> : null}
+              {c.is_associated ? <ToneBadge tone="success">Associated</ToneBadge> : null}
+              {c.is_proposed ? <ToneBadge tone="info">Proposed</ToneBadge> : null}
+              {c.rejected_by_human ? <ToneBadge tone="danger">Rejected by a reviewer</ToneBadge> : null}
+              {c.excluded ? <ToneBadge tone="danger">Excluded</ToneBadge> : null}
               {c.retrieved_by.map((signal) => (
-                <Badge key={signal} tone="neutral">
+                <ToneBadge key={signal}>
                   found by {signal}
-                </Badge>
+                </ToneBadge>
               ))}
             </div>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <ScoreGauge score={c.score} />
+          <ScoreRing score={c.score} thresholds={thresholds} size={52} />
           {action}
         </div>
       </header>
@@ -92,7 +91,7 @@ export function CandidateCard({ candidate: c, action, current }: { candidate: Ca
                     <td className="py-1.5 pr-3 tabular-nums text-slate-900" title={m.reference_source ? `from ${m.reference_source}` : undefined}>
                       {formatMeasure(m.reference, m.unit)}
                     </td>
-                    <td className={cx("py-1.5 pr-3 text-right tabular-nums", different ? "font-medium text-amber-800" : "text-slate-500")}>
+                    <td className={cn("py-1.5 pr-3 text-right tabular-nums", different ? "font-medium text-amber-800" : "text-slate-500")}>
                       {percent(m.relative_difference) ?? "—"}
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-slate-600">{m.score != null ? Math.round(m.score * 100) : "—"}</td>
@@ -111,7 +110,7 @@ export function CandidateCard({ candidate: c, action, current }: { candidate: Ca
           {c.features.map((f) => (
             <li
               key={f.key}
-              className={cx("rounded-md px-2 py-1 text-xs ring-1 ring-inset", FEATURE_STYLES[f.status])}
+              className={cn("rounded-md px-2 py-1 text-xs ring-1 ring-inset", FEATURE_STYLES[f.status])}
               title={f.policy ? `Conflict policy: ${f.policy}` : undefined}
             >
               <span className="font-medium">{labelize(f.key)}</span>: {formatValue(f.competitor)}
@@ -120,7 +119,7 @@ export function CandidateCard({ candidate: c, action, current }: { candidate: Ca
             </li>
           ))}
           {featureDiffs.map((d) => (
-            <li key={d.field} className={cx("rounded-md px-2 py-1 text-xs ring-1 ring-inset", FEATURE_STYLES.conflict)}>
+            <li key={d.field} className={cn("rounded-md px-2 py-1 text-xs ring-1 ring-inset", FEATURE_STYLES.conflict)}>
               <span className="font-medium">{d.label ?? labelize(d.field)}</span>: {formatValue(d.competitor)} vs {formatValue(d.reference)}
             </li>
           ))}
@@ -146,7 +145,7 @@ export function CandidateCard({ candidate: c, action, current }: { candidate: Ca
 function FlagList({ title, flags, tone }: { title: string; flags: Flag[]; tone: "danger" | "warning" }) {
   return (
     <div
-      className={cx(
+      className={cn(
         "mt-3 rounded-lg border px-3 py-2 text-xs",
         tone === "danger" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-900",
       )}

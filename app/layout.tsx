@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
+// The family name is spelled out in globals.css (`--font-sans`), so only the font files load here.
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
@@ -21,8 +22,13 @@ export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-50 font-sans text-slate-900">{children}</body>
+    <html lang="en" className={`${inter.className} h-full antialiased`}>
+      <body className="min-h-full bg-background font-sans text-foreground">
+        <NuqsAdapter>
+          <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
+        </NuqsAdapter>
+        <Toaster position="bottom-right" richColors closeButton />
+      </body>
     </html>
   );
 }

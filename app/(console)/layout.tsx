@@ -1,26 +1,26 @@
-import { NotificationBell, SidebarNav } from "@/components/nav";
-import { apiFetch, settle } from "@/lib/api";
-import type { UnreadCount } from "@/lib/types";
+import { cookies } from "next/headers";
+import { AppSidebar } from "@/components/app-sidebar";
+import { LiveProvider } from "@/components/live";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 
+// The sidebar gets its live state from the event stream (LiveProvider), so the layout never
+// waits on the API and navigations stay instant.
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
-  // A failed count only hides the badge; it never blocks the page.
-  const unread = await settle(apiFetch<UnreadCount>("/notifications/unread-count"));
+  const sidebarOpen = (await cookies()).get("sidebar_state")?.value !== "false";
 
   return (
-    <div className="min-h-screen lg:flex">
-      <aside className="border-b border-slate-200 bg-white px-4 py-4 lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-60 lg:flex-col lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-4 lg:py-6">
-        <div className="mb-4 flex items-center gap-2.5 px-2 lg:mb-8">
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="text-sm font-semibold">Competitor Catalog</p>
-            <p className="text-xs text-slate-500">Scraper console</p>
+    <LiveProvider>
+      <SidebarProvider defaultOpen={sidebarOpen}>
+        <AppSidebar />
+        {/* overflow-x-clip keeps the full-bleed sticky header background inside the column. */}
+        <SidebarInset className="min-w-0 overflow-x-clip">
+          <div className="flex h-12 items-center gap-2 border-b bg-background px-4 md:hidden">
+            <SidebarTrigger />
+            <span className="text-sm font-semibold">Competitor Catalog</span>
           </div>
-          <NotificationBell unread={unread.data?.unread ?? 0} />
-        </div>
-        <SidebarNav />
-      </aside>
-      <main className="min-w-0 flex-1 lg:pl-60">
-        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</div>
-      </main>
-    </div>
+          <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-10 sm:px-6 lg:px-8">{children}</div>
+        </SidebarInset>
+      </SidebarProvider>
+    </LiveProvider>
   );
 }

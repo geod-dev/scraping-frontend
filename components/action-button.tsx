@@ -1,17 +1,27 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useConfirm } from "@/components/confirm";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import type { ActionResult } from "@/lib/action-result";
 
 type Props<T> = {
   // Server action that takes one serializable input object.
   action: (input: T) => Promise<ActionResult<unknown>>;
   input: T;
-  label: string;
+  label: ReactNode;
+  icon?: ReactNode;
   pendingLabel?: string;
-  confirmMessage?: string;
-  variant?: "primary" | "secondary" | "danger";
+  // Asks for confirmation first (title of the dialog; `confirmMessage` details it).
+  confirmTitle?: string;
+  confirmMessage?: ReactNode;
+  confirmLabel?: string;
+  successMessage?: string;
+  variant?: "default" | "outline" | "destructive" | "secondary" | "ghost";
+  size?: "default" | "sm" | "lg";
   disabled?: boolean;
   // Shown as a tooltip, e.g. why the button is disabled.
   title?: string;
@@ -22,59 +32,50 @@ type Props<T> = {
   followResult?: boolean;
 };
 
-const VARIANTS = {
-  primary: "bg-indigo-600 text-white hover:bg-indigo-500",
-  secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-  danger: "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50",
-};
-
 export function ActionButton<T>({
   action,
   input,
   label,
+  icon,
   pendingLabel,
+  confirmTitle,
   confirmMessage,
-  variant = "secondary",
+  confirmLabel,
+  successMessage,
+  variant = "outline",
+  size = "lg",
   disabled,
   title,
-  className = "",
+  className,
   redirectTo,
   followResult,
 }: Props<T>) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
 
-  function run() {
-    if (confirmMessage && !window.confirm(confirmMessage)) return;
-    setError(null);
+  async function run() {
+    if (confirmTitle && !(await confirm({ title: confirmTitle, message: confirmMessage, confirmLabel, tone: variant === "destructive" ? "danger" : "primary" }))) return;
     startTransition(async () => {
       const result = await action(input);
       if (!result.ok) {
-        setError(result.message);
+        toast.error(result.message);
         return;
       }
+      if (successMessage) toast.success(successMessage);
       const target = (followResult && result.redirectTo) || redirectTo;
-      if (target) {
-        router.push(target);
-      } else {
-        router.refresh();
-      }
+      if (target) router.push(target);
+      else router.refresh();
     });
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-1">
-      <button
-        type="button"
-        onClick={run}
-        disabled={disabled || pending}
-        title={title}
-        className={`inline-flex h-9 items-center justify-center rounded-md px-3.5 text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
-      >
-        {pending ? (pendingLabel ?? "Working…") : label}
-      </button>
-      {error ? <span className="max-w-xs text-xs text-rose-700">{error}</span> : null}
-    </span>
+    <>
+      <Button type="button" variant={variant} size={size} onClick={run} disabled={disabled || pending} title={title} className={className}>
+        {pending ? <Spinner /> : icon}
+        {pending ? (pendingLabel ?? label) : label}
+      </Button>
+      {confirmDialog}
+    </>
   );
 }

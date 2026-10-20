@@ -1,16 +1,21 @@
 import Link from "next/link";
-import { DataTabs } from "@/components/data";
-import { ApiUnavailable, Badge, Card, EmptyState, Field, FilterBar, PageHeader, Pagination, Table, Td, Th, inputClass, primaryButton, secondaryButton } from "@/components/ui";
+import { FilterBar, FilterSelect, FilterToggle } from "@/components/filters";
+import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination, RowChevron, ToneBadge } from "@/components/kit";
+import { LinkRow } from "@/components/link-row";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiFetch, settle } from "@/lib/api";
+import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatNumber, labelize } from "@/lib/format";
+import { formatValue } from "@/lib/matching";
 import { boolFlag, positiveInt, text, type SearchParams } from "@/lib/params";
 import type { Competitor, DimensionlessPage } from "@/lib/types";
 
-export const metadata = { title: "Dimensionless products" };
+export const metadata = { title: "Products without dimensions" };
 
 const PAGE_SIZE = 50;
 
-export default async function DimensionlessPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+export default async function DimensionlessProductsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const productType = text(sp.product_type, 64);
   const titleHasNumbers = boolFlag(sp.title_has_numbers);
@@ -18,7 +23,8 @@ export default async function DimensionlessPage({ searchParams }: { searchParams
 
   const competitors = await settle(apiFetch<Competitor[]>("/competitors"));
   // The endpoint needs a competitor: default to the first one.
-  const competitor = text(sp.competitor, 64) ?? competitors.data?.[0]?.key;
+  const first = competitors.data?.[0]?.key;
+  const competitor = text(sp.competitor, 64) ?? first;
 
   const products = competitor
     ? await settle(
@@ -28,62 +34,45 @@ export default async function DimensionlessPage({ searchParams }: { searchParams
       )
     : null;
 
-  const paging = {
-    competitor,
+  const types = Object.entries(products?.data?.by_product_type ?? {}).sort((a, b) => b[1] - a[1]);
+  const allCount = types.reduce((sum, [, count]) => sum + count, 0);
+  const values = {
+    competitor: competitor === first ? undefined : competitor,
     product_type: productType,
     title_has_numbers: titleHasNumbers === undefined ? undefined : titleHasNumbers ? "1" : "0",
   };
-  const types = Object.entries(products?.data?.by_product_type ?? {}).sort((a, b) => b[1] - a[1]);
-  const allCount = types.reduce((sum, [, count]) => sum + count, 0);
+  const chips = filterChips("/data/dimensionless", values, [
+    { name: "product_type", label: "Type", format: labelize },
+    { name: "title_has_numbers", label: "Title", format: (v) => (v === "1" ? "With numbers" : "Without numbers") },
+  ]);
+  const clearHref = clearFiltersHref("/data/dimensionless", values, ["competitor"]);
 
   return (
     <>
       <PageHeader
-        title="Other data"
+        breadcrumbs={[{ label: "Other data" }]}
+        title="Products without dimensions"
         description={
           products?.data
-            ? `${formatNumber(allCount)} products whose dimensions could not be read, so their matching cannot compare measures.`
+            ? `${formatNumber(allCount)} products whose dimensions could not be read: their matching cannot compare measures.`
             : "Products whose dimensions could not be read from their attributes or title"
         }
+        toolbar={
+          <FilterBar>
+            <FilterSelect name="competitor" label="Competitor" defaultValue={first} options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
+            <FilterSelect name="product_type" label="Product type" allLabel={`All types (${formatNumber(allCount)})`} options={types.map(([type, count]) => ({ value: type, label: labelize(type), count }))} />
+            <FilterToggle
+              name="title_has_numbers"
+              label="Numbers in the title"
+              options={[
+                { value: "1", label: "Numbers in title" },
+                { value: "0", label: "No numbers" },
+              ]}
+            />
+            <FilterChips chips={chips} clearHref={clearHref} />
+          </FilterBar>
+        }
       />
-      <DataTabs active="/data/dimensionless" />
-
-      <FilterBar>
-        <Field label="Competitor">
-          <select className={inputClass} name="competitor" defaultValue={competitor ?? ""}>
-            {competitors.data?.map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Product type">
-          <select className={inputClass} name="product_type" defaultValue={productType ?? ""}>
-            <option value="">Any</option>
-            {types.map(([type, count]) => (
-              <option key={type} value={type}>
-                {labelize(type)} ({formatNumber(count)})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Title">
-          <select className={inputClass} name="title_has_numbers" defaultValue={paging.title_has_numbers ?? ""}>
-            <option value="">Any</option>
-            <option value="1">With numbers (likely parsing gap)</option>
-            <option value="0">Without numbers</option>
-          </select>
-        </Field>
-        <div className="flex gap-2">
-          <button type="submit" className={primaryButton}>
-            Apply
-          </button>
-          <Link href="/data/dimensionless" className={secondaryButton}>
-            Reset
-          </Link>
-        </div>
-      </FilterBar>
 
       {competitors.error ? <ApiUnavailable message={competitors.error} /> : null}
       {products?.error ? <ApiUnavailable message={products.error} /> : null}
@@ -93,40 +82,41 @@ export default async function DimensionlessPage({ searchParams }: { searchParams
           <EmptyState title="No product without dimensions">Every readable product of this competitor has at least one measure.</EmptyState>
         ) : (
           <>
-            <p className="mb-2 text-sm text-slate-500">{formatNumber(products.data.total)} products with these filters</p>
-            <Card padded={false}>
+            <Card className="py-0">
               <Table>
-                <thead>
-                  <tr>
-                    <Th>Product</Th>
-                    <Th>Category</Th>
-                    <Th>Type</Th>
-                    <Th>Normalized attributes</Th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-4">Product</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Normalized attributes</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {products.data.items.map((p) => (
-                    <tr key={p.product_id} className="hover:bg-slate-50">
-                      <Td>
-                        <Link href={`/products/${p.product_id}`} className="font-medium text-indigo-600 hover:text-indigo-500">
+                    <LinkRow key={p.product_id} href={`/products/${p.product_id}`} className="align-top">
+                      <TableCell className="max-w-md pl-4 whitespace-normal">
+                        <Link href={`/products/${p.product_id}`} className="font-medium hover:text-primary">
                           {p.title ?? `#${p.product_id}`}
                         </Link>
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                          {p.catalog_reference ? <span>{p.catalog_reference}</span> : null}
-                          {p.title_has_numbers ? <Badge tone="warning">Numbers in title</Badge> : null}
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          {p.catalog_reference ? <code>{p.catalog_reference}</code> : null}
+                          {p.title_has_numbers ? <ToneBadge tone="warning">Numbers in title</ToneBadge> : null}
                         </div>
-                      </Td>
-                      <Td>{p.category ?? "—"}</Td>
-                      <Td>{p.product_type ? labelize(p.product_type) : <span className="text-slate-400">Unknown</span>}</Td>
-                      <Td>
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-muted-foreground">{p.category ?? "—"}</TableCell>
+                      <TableCell>{p.product_type ? labelize(p.product_type) : <span className="text-muted-foreground">Unknown</span>}</TableCell>
+                      <TableCell className="whitespace-normal">
                         <Attributes values={p.normalized_attributes} />
-                      </Td>
-                    </tr>
+                      </TableCell>
+                      <RowChevron />
+                    </LinkRow>
                   ))}
-                </tbody>
+                </TableBody>
               </Table>
             </Card>
-            <Pagination basePath="/data/dimensionless" query={paging} total={products.data.total} limit={products.data.limit} offset={products.data.offset} />
+            <Pagination basePath="/data/dimensionless" query={{ ...values, competitor }} total={products.data.total} limit={products.data.limit} offset={products.data.offset} />
           </>
         )
       ) : null}
@@ -136,14 +126,14 @@ export default async function DimensionlessPage({ searchParams }: { searchParams
 
 function Attributes({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values);
-  if (entries.length === 0) return <span className="text-slate-400">None</span>;
+  if (entries.length === 0) return <span className="text-muted-foreground">None</span>;
   return (
     <ul className="flex max-w-md flex-wrap gap-1">
       {entries.map(([key, value]) => (
         <li key={key}>
-          <Badge tone="neutral">
-            {labelize(key)}: {typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}
-          </Badge>
+          <ToneBadge className="h-auto max-w-64 whitespace-normal">
+            {labelize(key)}: {formatValue(value)}
+          </ToneBadge>
         </li>
       ))}
     </ul>
