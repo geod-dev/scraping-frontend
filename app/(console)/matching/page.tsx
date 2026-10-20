@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { isActiveJob, JobOrigin } from "@/components/job-progress";
+import { isActiveJob, JobOrigin, jobRefreshIntervalMs } from "@/components/job-progress";
 import { MatchStatusBadge, MatchingTabs } from "@/components/matching";
 import { RerunDeprecatedButton } from "@/components/rerun-deprecated-button";
 import { StartTaskForm } from "@/components/start-task-form";
@@ -29,7 +29,7 @@ export default async function MatchingOverviewPage() {
         description="Each competitor product is associated with its equivalent in the Antalis reference catalog."
         actions={
           <div className="flex items-start gap-3">
-            <AutoRefresh enabled={anyActive} />
+            <AutoRefresh enabled={anyActive} intervalMs={jobRefreshIntervalMs(summary.data?.flatMap((s) => (s.job ? [s.job] : [])) ?? [])} />
             <RerunDeprecatedButton disabled={totalDeprecated === 0} />
           </div>
         }

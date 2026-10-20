@@ -10,6 +10,20 @@ export function isActiveJob(job: Pick<Job, "status">) {
   return ACTIVE.has(job.status);
 }
 
+const DEFAULT_REFRESH_MS = 3000;
+const REFRESH_MARGIN_S = 0.25;
+
+// Live refresh interval: one request's worth of time plus a margin, following the
+// fastest running job. Falls back to the default when no job reports a rate.
+export function jobRefreshIntervalMs(jobs: Pick<Job, "status" | "progress">[]) {
+  const rates = jobs
+    .filter((job) => job.status === "running")
+    .map((job) => job.progress?.seconds_per_request)
+    .filter((s): s is number => s != null && s > 0);
+  if (rates.length === 0) return DEFAULT_REFRESH_MS;
+  return Math.round((Math.min(...rates) + REFRESH_MARGIN_S) * 1000);
+}
+
 // A new job can continue this one, skipping the work already done.
 export function isRestartableJob(job: Pick<Job, "status">) {
   return RESTARTABLE.has(job.status);

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { deleteJob, jobControl, restartJob } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { EstimateSummary, isActiveJob, isRestartableJob, JobOrigin, JobProgress } from "@/components/job-progress";
+import { EstimateSummary, isActiveJob, isRestartableJob, JobOrigin, JobProgress, jobRefreshIntervalMs } from "@/components/job-progress";
 import { ApiUnavailable, Card, DefinitionList, PageHeader, StatusBadge } from "@/components/ui";
 import { apiFetch, isApiError } from "@/lib/api";
 import { formatDateTime, formatDuration, labelize } from "@/lib/format";
@@ -57,7 +57,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <AutoRefresh enabled={active} />
+            <AutoRefresh enabled={active} intervalMs={jobRefreshIntervalMs([job])} />
             <StatusBadge status={job.status} />
             {canPause ? (
               <ActionButton action={jobControl} input={{ id: job.id, action: "pause" }} label="Pause" variant="secondary" />

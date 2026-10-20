@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ApiUnavailable, EmptyState, FilterBar, Field, PageHeader, Pagination, ProgressBar, StatusBadge, Table, Td, Th, inputClass, primaryButton, secondaryButton, Card } from "@/components/ui";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { JobOrigin } from "@/components/job-progress";
+import { JobOrigin, jobRefreshIntervalMs } from "@/components/job-progress";
 import { apiFetch, settle } from "@/lib/api";
 import { formatDateTime, formatDuration, formatNumber, labelize } from "@/lib/format";
 import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
@@ -42,7 +42,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       <PageHeader
         title="Jobs"
         description="Catalog syncs, price refreshes and matching runs, newest first."
-        actions={<AutoRefresh enabled={hasActive} />}
+        actions={<AutoRefresh enabled={hasActive} intervalMs={jobRefreshIntervalMs(jobs.data?.items ?? [])} />}
       />
 
       <FilterBar>

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { restartJob, workerControl } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { EstimateSummary, isActiveJob, isRestartableJob, JobOrigin, JobProgress } from "@/components/job-progress";
+import { EstimateSummary, isActiveJob, isRestartableJob, JobOrigin, JobProgress, jobRefreshIntervalMs } from "@/components/job-progress";
 import { StartTaskForm } from "@/components/start-task-form";
 import { ApiUnavailable, Badge, Card, DefinitionList, PageHeader, StatCard, StatusBadge } from "@/components/ui";
 import { apiFetch, isApiError, settle } from "@/lib/api";
@@ -86,7 +86,7 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
             {job && isActiveJob(job) ? (
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center gap-3">
-                  <AutoRefresh enabled />
+                  <AutoRefresh enabled intervalMs={jobRefreshIntervalMs([job])} />
                   <JobOrigin job={job} />
                 </div>
                 <JobProgress job={job} />
