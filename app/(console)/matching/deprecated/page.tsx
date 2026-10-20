@@ -4,6 +4,7 @@ import { MatchFilters, MatchTable } from "@/components/match-list";
 import { MatchingTabs } from "@/components/matching-tabs";
 import { RerunDeprecatedButton } from "@/components/rerun-deprecated-button";
 import { apiFetch, settle } from "@/lib/api";
+import { categoryOptions } from "@/lib/categories";
 import { formatNumber } from "@/lib/format";
 import { parseMatchFilters } from "@/lib/match-filters";
 import { scoreThresholds } from "@/lib/matching";
@@ -19,10 +20,11 @@ export default async function DeprecatedMatchesPage({ searchParams }: { searchPa
   const filters = parseMatchFilters(sp, "deprecated");
   const offset = positiveInt(sp.offset, 0);
 
-  const [competitors, matches, config] = await Promise.all([
+  const [competitors, matches, config, categories] = await Promise.all([
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(apiFetch<Paginated<MatchListItem>>("/matching/deprecated", { query: { ...filters.query, limit: PAGE_SIZE, offset } })),
     settle(apiFetch<MatchingConfig>("/matching/config")),
+    categoryOptions(filters.state.competitor),
   ]);
 
   return (
@@ -37,7 +39,7 @@ export default async function DeprecatedMatchesPage({ searchParams }: { searchPa
         }
         tabs={<MatchingTabs active="/matching/deprecated" />}
         actions={<RerunDeprecatedButton competitor={filters.state.competitor} disabled={matches.data?.total === 0} />}
-        toolbar={<MatchFilters kind="deprecated" filters={filters} competitors={competitors.data ?? []} />}
+        toolbar={<MatchFilters kind="deprecated" filters={filters} competitors={competitors.data ?? []} categories={categories} />}
       />
 
       {matches.error ? <ApiUnavailable message={matches.error} /> : null}

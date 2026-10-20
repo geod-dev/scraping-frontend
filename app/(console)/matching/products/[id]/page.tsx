@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CircleCheckIcon } from "lucide-react";
+import { CircleCheckIcon, UserCheckIcon, UserXIcon } from "lucide-react";
 import { CandidateCard } from "@/components/candidate-card";
 import { DecisionBar } from "@/components/decision-panel";
 import { FilterBar, FilterSearch } from "@/components/filters";
@@ -18,7 +18,7 @@ import { firstImage } from "@/lib/images";
 import { MATCH_LIST_PATHS, parseMatchFilters, reviewHref, type MatchListKind } from "@/lib/match-filters";
 import { DEPRECATED_REASON_LABELS, MATCH_STATUS_DESCRIPTIONS, MATCH_STATUS_LABELS, formatMeasure, formatScore, scoreThresholds, type Thresholds } from "@/lib/matching";
 import { buildQuery, oneOf, positiveInt, text, type QueryValues, type SearchParams } from "@/lib/params";
-import type { Candidate, CompareResult, Competitor, MatchDetail, MatchListItem, MatchingConfig, Paginated, ProductAnalysis, ProductDetail, ProductListItem } from "@/lib/types";
+import type { Candidate, CompareResult, Competitor, MatchDetail, MatchEvent, MatchListItem, MatchingConfig, Paginated, ProductAnalysis, ProductDetail, ProductListItem } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -360,6 +360,7 @@ function ScoreHero({
         <ScoreRing score={score} thresholds={thresholds} label={previewing ? "Preview" : "Score"} size={120} />
 
         <div className="min-w-0 flex-1 space-y-4">
+          <HumanDecision match={match} />
           <p className="text-sm text-muted-foreground">
             {previewing ? (
               <>
@@ -405,6 +406,35 @@ function ScoreHero({
   );
 }
 
+// The human decision event behind the current status (newest first in the history).
+function decisionEvent(match: MatchDetail): MatchEvent | null {
+  if (!match.decided_at) return null;
+  return match.history.find((e) => (e.event === "validated" || e.event === "rejected") && e.to_status === match.status) ?? null;
+}
+
+// Who validated or rejected the match, when, and their comment (else the reason recorded
+// with the decision).
+function HumanDecision({ match }: { match: MatchDetail }) {
+  if (!match.decided_by && !match.decided_at) return null;
+  const rejected = match.status === "rejected";
+  const Icon = rejected ? UserXIcon : UserCheckIcon;
+  const note = match.decision_comment ?? decisionEvent(match)?.reason ?? null;
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+      <Icon className={rejected ? "mt-0.5 size-4 shrink-0 text-rose-600" : "mt-0.5 size-4 shrink-0 text-emerald-600"} aria-hidden />
+      <div className="min-w-0">
+        <p>
+          <span className="font-medium">
+            {rejected ? "Rejected" : "Validated"} by {match.decided_by ?? "someone"}
+          </span>
+          {match.decided_at ? <span className="text-muted-foreground"> · {formatDateTime(match.decided_at)}</span> : null}
+        </p>
+        {note ? <p className="text-muted-foreground">{match.decision_comment ? `“${note}”` : note}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function Flags({ title, tone, messages }: { title: string; tone: "danger" | "warning"; messages: string[] }) {
   return (
     <div className={tone === "danger" ? "rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800 ring-1 ring-rose-200" : "rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200"}>
@@ -441,7 +471,7 @@ function StatusSummary({ match }: { match: MatchDetail }) {
           ...(match.decided_by || match.decided_at
             ? [
                 { label: "Decided", value: `${match.decided_by ?? "—"} · ${formatDateTime(match.decided_at)}` },
-                { label: "Comment", value: match.decision_comment ?? "—" },
+                { label: "Comment", value: match.decision_comment ?? decisionEvent(match)?.reason ?? "—" },
               ]
             : []),
           {

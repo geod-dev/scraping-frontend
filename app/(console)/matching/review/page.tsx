@@ -5,6 +5,7 @@ import { MatchFilters, MatchTable } from "@/components/match-list";
 import { MatchingTabs } from "@/components/matching-tabs";
 import { buttonVariants } from "@/components/ui/button";
 import { apiFetch, settle } from "@/lib/api";
+import { categoryOptions } from "@/lib/categories";
 import { formatNumber } from "@/lib/format";
 import { parseMatchFilters, reviewHref } from "@/lib/match-filters";
 import { scoreThresholds } from "@/lib/matching";
@@ -20,10 +21,11 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
   const filters = parseMatchFilters(sp, "review");
   const offset = positiveInt(sp.offset, 0);
 
-  const [competitors, queue, config] = await Promise.all([
+  const [competitors, queue, config, categories] = await Promise.all([
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(apiFetch<Paginated<MatchListItem>>("/matching/review", { query: { ...filters.query, limit: PAGE_SIZE, offset } })),
     settle(apiFetch<MatchingConfig>("/matching/config")),
+    categoryOptions(filters.state.competitor),
   ]);
 
   const first = queue.data?.items[0];
@@ -42,7 +44,7 @@ export default async function ReviewQueuePage({ searchParams }: { searchParams: 
             </Link>
           ) : null
         }
-        toolbar={<MatchFilters kind="review" filters={filters} competitors={competitors.data ?? []} />}
+        toolbar={<MatchFilters kind="review" filters={filters} competitors={competitors.data ?? []} categories={categories} />}
       />
 
       {queue.error ? <ApiUnavailable message={queue.error} /> : null}

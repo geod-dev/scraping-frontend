@@ -2,14 +2,16 @@
 
 import { createContext, useContext, useState, useTransition, type ReactNode, type TransitionStartFunction } from "react";
 import Link from "next/link";
-import { ArrowDownWideNarrowIcon, ArrowUpNarrowWideIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import { ArrowDownWideNarrowIcon, ArrowUpNarrowWideIcon, ChevronsUpDownIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
 import { debounce, parseAsNativeArrayOf, parseAsString, useQueryStates } from "nuqs";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,15 +29,19 @@ type Option = { value: string; label: ReactNode; count?: number | null };
 
 const FiltersContext = createContext<{ startTransition?: TransitionStartFunction; pending: boolean }>({ pending: false });
 
-function useParam(name: string) {
+// `clears`: parameters that depend on this one, dropped when it changes.
+function useParam(name: string, clears: string[] = []) {
   const { startTransition } = useContext(FiltersContext);
   const [state, setState] = useQueryStates(
-    { [name]: parseAsString, offset: parseAsString },
+    { [name]: parseAsString, offset: parseAsString, ...Object.fromEntries(clears.map((c) => [c, parseAsString])) },
     { shallow: false, scroll: false, startTransition },
   );
   const set = (value: string | null, typing = false) =>
-    setState({ [name]: value || null, offset: null }, typing ? { limitUrlUpdates: debounce(TYPING_DELAY_MS) } : undefined);
-  return [state[name] ?? "", set] as const;
+    setState(
+      { [name]: value || null, offset: null, ...Object.fromEntries(clears.map((c) => [c, null])) },
+      typing ? { limitUrlUpdates: debounce(TYPING_DELAY_MS) } : undefined,
+    );
+  return [(state[name] as string | null) ?? "", set] as const;
 }
 
 // Toolbar holding the filters of a list: inline controls, the filter sheet, the active
@@ -91,6 +97,7 @@ export function FilterSelect({
   label,
   allLabel,
   defaultValue,
+  clears,
   className,
 }: {
   name: string;
@@ -98,9 +105,10 @@ export function FilterSelect({
   label: string;
   allLabel?: string;
   defaultValue?: string;
+  clears?: string[];
   className?: string;
 }) {
-  const [value, setValue] = useParam(name);
+  const [value, setValue] = useParam(name, clears);
   const fallback = allLabel ? ALL : (defaultValue ?? options[0]?.value ?? ALL);
   return (
     <Select value={value || fallback} onValueChange={(v) => setValue(v === ALL || v === defaultValue ? null : v)}>
@@ -171,6 +179,97 @@ export function FilterMulti({ name, options, label }: { name: string; options: O
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
+  );
+}
+
+const COMBOBOX_SHOWN = 200;
+
+// Several choices of a repeated parameter among many, in a popover with a search field:
+// for long lists (categories). `hint` is shown under the label and searched too.
+export function FilterCombobox({
+  name,
+  options,
+  label,
+  anyLabel = "Any",
+  searchPlaceholder = "Search…",
+}: {
+  name: string;
+  options: (Option & { hint?: string; searchText?: string })[];
+  label: string;
+  anyLabel?: string;
+  searchPlaceholder?: string;
+}) {
+  const { startTransition } = useContext(FiltersContext);
+  const [state, setState] = useQueryStates(
+    { [name]: parseAsNativeArrayOf(parseAsString), offset: parseAsString },
+    { shallow: false, scroll: false, startTransition },
+  );
+  const [search, setSearch] = useState("");
+  const selected = state[name] as string[];
+  const set = (values: string[]) => setState({ [name]: values.length > 0 ? values : null, offset: null });
+  const toggle = (value: string, on: boolean) => set(on ? [...selected, value] : selected.filter((v) => v !== value));
+
+  const words = search.toLocaleLowerCase("fr").split(/\s+/).filter(Boolean);
+  const matching = options.filter((o) => {
+    const haystack = (o.searchText ?? `${typeof o.label === "string" ? o.label : o.value} ${o.hint ?? ""}`).toLocaleLowerCase("fr");
+    return words.every((w) => haystack.includes(w));
+  });
+  // Selected options first, so they stay in reach while searching.
+  const ordered = [...matching.filter((o) => selected.includes(o.value)), ...matching.filter((o) => !selected.includes(o.value))];
+  const first = options.find((o) => o.value === selected[0]);
+
+  return (
+    <Popover onOpenChange={(open) => !open && setSearch("")}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-label={label} className="w-full justify-between bg-background font-normal">
+          <span className={cn("truncate", selected.length === 0 && "text-muted-foreground")}>
+            {selected.length === 0 ? anyLabel : selected.length === 1 ? (first?.label ?? `#${selected[0]}`) : `${selected.length} selected`}
+          </span>
+          <ChevronsUpDownIcon className="text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-72 p-0">
+        <div className="border-b p-2">
+          <InputGroup className="h-8">
+            <InputGroupAddon>
+              <SearchIcon />
+            </InputGroupAddon>
+            <InputGroupInput type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={searchPlaceholder} aria-label={`Search ${label.toLowerCase()}`} autoFocus />
+          </InputGroup>
+        </div>
+        <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-multiselectable aria-label={label}>
+          {ordered.slice(0, COMBOBOX_SHOWN).map((o) => {
+            const checked = selected.includes(o.value);
+            return (
+              <li key={o.value} role="option" aria-selected={checked}>
+                <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                  <Checkbox checked={checked} onCheckedChange={(on) => toggle(o.value, on === true)} className="mt-0.5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{o.label}</span>
+                    {o.hint ? <span className="block truncate text-xs text-muted-foreground">{o.hint}</span> : null}
+                  </span>
+                  {o.count != null ? <span className="text-xs text-muted-foreground tabular-nums">{o.count.toLocaleString("en-GB")}</span> : null}
+                </label>
+              </li>
+            );
+          })}
+          {ordered.length === 0 ? <li className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing matches “{search}”.</li> : null}
+          {ordered.length > COMBOBOX_SHOWN ? (
+            <li className="px-2 py-2 text-center text-xs text-muted-foreground">
+              {(ordered.length - COMBOBOX_SHOWN).toLocaleString("en-GB")} more: refine the search
+            </li>
+          ) : null}
+        </ul>
+        {selected.length > 0 ? (
+          <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+            <span className="text-muted-foreground">{selected.length} selected</span>
+            <button type="button" onClick={() => set([])} className="font-medium text-muted-foreground hover:text-foreground">
+              Clear
+            </button>
+          </div>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }
 

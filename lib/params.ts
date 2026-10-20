@@ -25,6 +25,13 @@ export function manyOf<T extends string>(value: string | string[] | undefined, a
   return raw.filter((v): v is T => (allowed as readonly string[]).includes(v));
 }
 
+// Every positive integer of a repeatable parameter (?category_id=1&category_id=2), without duplicates.
+export function positiveInts(value: string | string[] | undefined, max = 100): number[] {
+  const raw = Array.isArray(value) ? value : value ? [value] : [];
+  const ints = raw.map((v) => Number.parseInt(v, 10)).filter((n) => Number.isSafeInteger(n) && n > 0);
+  return [...new Set(ints)].slice(0, max);
+}
+
 export function decimal(value: string | string[] | undefined, min: number, max: number): number | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return undefined;

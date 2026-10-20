@@ -4,7 +4,8 @@ import { buildQuery, type QueryValues } from "@/lib/params";
 // Chips of the active filters of a list page. Each chip links to the same page without that
 // value (pagination restarts); repeated parameters get one chip per value.
 
-export type ChipDef = { name: string; label: string; format?: (value: string) => ReactNode };
+// `clears`: parameters that depend on this one, dropped with it.
+export type ChipDef = { name: string; label: string; format?: (value: string) => ReactNode; clears?: string[] };
 
 export type Chip = { key: string; label: ReactNode; href: string };
 
@@ -32,7 +33,7 @@ export function filterChips(basePath: string, values: QueryValues, defs: ChipDef
       chips.push({
         key: def.name,
         label: typeof label === "string" ? `${def.label}: ${label}` : label,
-        href: href(basePath, { ...values, [def.name]: undefined }),
+        href: href(basePath, { ...values, [def.name]: undefined, ...Object.fromEntries((def.clears ?? []).map((c) => [c, undefined])) }),
       });
     }
   }

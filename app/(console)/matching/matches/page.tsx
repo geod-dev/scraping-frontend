@@ -3,6 +3,7 @@ import { LiveRefresh } from "@/components/live";
 import { MatchFilters, MatchTable } from "@/components/match-list";
 import { MatchingTabs } from "@/components/matching-tabs";
 import { apiFetch, settle } from "@/lib/api";
+import { categoryOptions } from "@/lib/categories";
 import { formatNumber } from "@/lib/format";
 import { parseMatchFilters } from "@/lib/match-filters";
 import { scoreThresholds } from "@/lib/matching";
@@ -18,10 +19,11 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
   const filters = parseMatchFilters(sp, "matches");
   const offset = positiveInt(sp.offset, 0);
 
-  const [competitors, matches, config] = await Promise.all([
+  const [competitors, matches, config, categories] = await Promise.all([
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(apiFetch<Paginated<MatchListItem>>("/matching/matches", { query: { ...filters.query, limit: PAGE_SIZE, offset } })),
     settle(apiFetch<MatchingConfig>("/matching/config")),
+    categoryOptions(filters.state.competitor),
   ]);
 
   return (
@@ -31,7 +33,7 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
         title="All matches"
         description={matches.data ? `${formatNumber(matches.data.total)} matches with these filters` : "Every competitor product and its Antalis equivalent"}
         tabs={<MatchingTabs active="/matching/matches" />}
-        toolbar={<MatchFilters kind="matches" filters={filters} competitors={competitors.data ?? []} />}
+        toolbar={<MatchFilters kind="matches" filters={filters} competitors={competitors.data ?? []} categories={categories} />}
       />
 
       {matches.error ? <ApiUnavailable message={matches.error} /> : null}

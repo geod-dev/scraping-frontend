@@ -1,9 +1,10 @@
-import { FilterBar, FilterField, FilterGroup, FilterMulti, FilterNumber, FilterOrder, FilterSearch, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
+import { FilterBar, FilterCombobox, FilterField, FilterGroup, FilterMulti, FilterNumber, FilterOrder, FilterSearch, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
 import { FilterChips, RowChevron } from "@/components/kit";
 import { LinkRow } from "@/components/link-row";
-import { DecisionReasons, MatchStatusBadge, ProductCell, ScoreRing } from "@/components/matching";
+import { MatchStatusBadge, ProductCell, ScoreRing } from "@/components/matching";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { CategoryOption } from "@/lib/categories";
 import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { DEFAULT_SORT, MATCH_LIST_PATHS, reviewHref, type MatchListKind, type parseMatchFilters } from "@/lib/match-filters";
@@ -24,16 +25,18 @@ import type { Competitor, DeprecatedReason, MatchListItem, MatchStatus } from "@
 
 type Filters = ReturnType<typeof parseMatchFilters>;
 
-// Filters of the three match lists, ordered from the most used: the competitor product search
-// and the competitor inline, then in the sheet the Antalis side, the score, the decision and
-// the product. Active filters show as removable chips; the sort sits on the right.
-export function MatchFilters({ kind, filters, competitors }: { kind: MatchListKind; filters: Filters; competitors: Competitor[] }) {
+// Filters of the three match lists: the competitor product search inline, then in the sheet,
+// from the most used, the competitor and its categories, the Antalis side, the score, the
+// decision and the product. Active filters show as removable chips; the sort sits on the right.
+export function MatchFilters({ kind, filters, competitors, categories }: { kind: MatchListKind; filters: Filters; competitors: Competitor[]; categories: CategoryOption[] }) {
   const basePath = MATCH_LIST_PATHS[kind];
   const names = new Map(competitors.map((c) => [c.key, c.name]));
+  const categoryNames = new Map(categories.map((c) => [c.value, c.label]));
   const yesNo = (yes: string, no: string) => (v: string) => (v === "1" ? yes : no);
   const chips = filterChips(basePath, filters.values, [
     { name: "q", label: "Competitor product" },
-    { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
+    { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v, clears: ["category_id"] },
+    { name: "category_id", label: "Category", format: (v) => categoryNames.get(v) ?? `#${v}` },
     { name: "status", label: "Status", format: (v) => MATCH_STATUS_LABELS[v as MatchStatus] ?? v },
     { name: "antalis_q", label: "Antalis product" },
     { name: "antalis_product_id", label: "Antalis product", format: (v) => `#${v}` },
@@ -47,7 +50,7 @@ export function MatchFilters({ kind, filters, competitors }: { kind: MatchListKi
     { name: "product_status", label: "Product", format: (v) => (v === "active" ? "Active" : "Missing") },
   ]);
   const clearHref = clearFiltersHref(basePath, filters.values, ["sort", "order"]);
-  const inline = new Set(["q", "competitor"]);
+  const inline = new Set(["q"]);
 
   return (
     <FilterBar
@@ -59,8 +62,18 @@ export function MatchFilters({ kind, filters, competitors }: { kind: MatchListKi
       }
     >
       <FilterSearch name="q" label="Search competitor products" placeholder="Competitor product…" />
-      <FilterSelect name="competitor" label="Competitor" allLabel="All competitors" options={competitors.map((c) => ({ value: c.key, label: c.name }))} />
       <FilterSheet count={chips.filter((c) => !inline.has(c.key.split("=")[0])).length} clearHref={clearHref}>
+        <FilterGroup title="Competitor">
+          <FilterField label="Competitor">
+            <FilterSelect name="competitor" label="Competitor" allLabel="All competitors" clears={["category_id"]} className="w-full" options={competitors.map((c) => ({ value: c.key, label: c.name }))} />
+          </FilterField>
+          {filters.state.competitor ? (
+            <FilterField label="Categories" hint="Products in any of these categories or their sub-categories">
+              <FilterCombobox name="category_id" label="Categories" anyLabel="Any category" searchPlaceholder="Search categories…" options={categories} />
+            </FilterField>
+          ) : null}
+        </FilterGroup>
+
         {kind === "matches" ? (
           <FilterGroup title="Status">
             <FilterMulti name="status" label="Match status" options={MATCH_STATUSES.map((s) => ({ value: s, label: MATCH_STATUS_LABELS[s] }))} />
@@ -118,6 +131,29 @@ export function MatchFilters({ kind, filters, competitors }: { kind: MatchListKi
   );
 }
 
+// Engine reasons that only restate the status (score thresholds, clear lead): left out of the lists.
+const STATUS_REASONS = new Set(["score_above_auto", "clear_gap", "review_band", "score_below_review"]);
+
+// One line under the status badge: who decided (and their comment), else why it became
+// obsolete, else what the engine flagged. The whole text is in the tooltip.
+function StatusNote({ match: m }: { match: MatchListItem }) {
+  let note: string | null;
+  if (m.status === "deprecated") {
+    note = `was ${m.previous_status ? MATCH_STATUS_LABELS[m.previous_status] : "—"}${m.deprecated_reason ? ` · ${DEPRECATED_REASON_LABELS[m.deprecated_reason]}` : ""}`;
+  } else if (m.decided_by) {
+    note = `by ${m.decided_by}${m.decision_comment ? ` · “${m.decision_comment}”` : ""}`;
+  } else {
+    const flagged = m.decision_reasons.filter((r) => !STATUS_REASONS.has(r.code));
+    note = flagged.length > 0 ? flagged.map((r) => decisionReasonLabel(r.code, r.message)).join(" · ") : null;
+  }
+  if (!note) return null;
+  return (
+    <p className="line-clamp-1 text-xs text-muted-foreground" title={note}>
+      {note}
+    </p>
+  );
+}
+
 // Matches of a list. A whole row opens the review screen (keeping the position in the list);
 // the scores are drawn with the same ring as the review screen.
 export function MatchTable({ kind, items, values, offset, thresholds }: { kind: MatchListKind; items: MatchListItem[]; values: QueryValues; offset: number; thresholds: Thresholds }) {
@@ -162,15 +198,7 @@ export function MatchTable({ kind, items, values, offset, thresholds }: { kind: 
                 <TableCell className="whitespace-normal">
                   <div className="max-w-56 space-y-1">
                     <MatchStatusBadge status={m.status} manualChoice={m.manual_choice} />
-                    {m.status === "deprecated" ? (
-                      <p className="text-xs text-muted-foreground">
-                        was {m.previous_status ? MATCH_STATUS_LABELS[m.previous_status] : "—"}
-                        {m.deprecated_reason ? ` · ${DEPRECATED_REASON_LABELS[m.deprecated_reason]}` : null}
-                      </p>
-                    ) : (
-                      <DecisionReasons reasons={m.decision_reasons} compact />
-                    )}
-                    {m.decided_by ? <p className="text-xs text-muted-foreground">by {m.decided_by}</p> : null}
+                    <StatusNote match={m} />
                   </div>
                 </TableCell>
                 <TableCell>
