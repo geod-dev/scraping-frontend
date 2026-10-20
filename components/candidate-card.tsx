@@ -20,7 +20,8 @@ function percent(value: number | null | undefined): string | null {
 
 // Score breakdown of one Antalis candidate for a competitor product: final score, the three
 // sub-scores with their weights, compared measures, characteristics, exclusions and flags.
-export function CandidateCard({ candidate: c, action }: { candidate: Candidate; action?: ReactNode }) {
+// `current` marks the candidate shown in the side-by-side comparison of the review screen.
+export function CandidateCard({ candidate: c, action, current }: { candidate: Candidate; action?: ReactNode; current?: boolean }) {
   const differing = new Set(c.differences.map((d) => `${d.kind}:${d.field}`));
   const featureDiffs = c.differences.filter((d) => d.kind === "feature" && !c.features.some((f) => f.key === d.field));
 
@@ -28,6 +29,7 @@ export function CandidateCard({ candidate: c, action }: { candidate: Candidate; 
     <article
       className={cx(
         "rounded-xl border bg-white p-4 shadow-sm",
+        current && "ring-2 ring-indigo-500/25",
         c.is_associated ? "border-emerald-300" : c.is_proposed ? "border-indigo-300" : c.excluded ? "border-rose-200" : "border-slate-200",
       )}
     >

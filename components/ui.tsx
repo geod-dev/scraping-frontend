@@ -319,3 +319,7 @@ export function ApiUnavailable({ message }: { message: string }) {
     </Notice>
   );
 }
+
+// Solid variants for decisive actions (validate / reject).
+export const successButton = `${buttonClass} bg-emerald-600 text-white hover:bg-emerald-500`;
+export const solidDangerButton = `${buttonClass} bg-rose-600 text-white hover:bg-rose-500`;

@@ -1,16 +1,29 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CandidateCard } from "@/components/candidate-card";
-import { DecisionPanel } from "@/components/decision-panel";
+import { DecisionBar } from "@/components/decision-panel";
 import { KeyboardNav } from "@/components/keyboard-nav";
-import { DecisionReasons, MatchEventList, MatchStatusBadge, ProductCell, ScoreGauge } from "@/components/matching";
+import { SplitComparison, toSide } from "@/components/match-compare";
+import { DecisionReasons, MatchEventList, MatchStatusBadge, ProductCell, ScoreRing, SubScore } from "@/components/matching";
+import { ReviewStage, SessionCounter } from "@/components/review-session";
 import { ApiUnavailable, Badge, Card, DefinitionList, EmptyState, Notice, PageHeader, inputClass, primaryButton, secondaryButton } from "@/components/ui";
 import { apiFetch, isApiError, settle } from "@/lib/api";
-import { formatDateTime, formatNumber, labelize } from "@/lib/format";
+import { formatDateTime, labelize } from "@/lib/format";
 import { MATCH_LIST_PATHS, parseMatchFilters, reviewHref, type MatchListKind } from "@/lib/match-filters";
 import { DEPRECATED_REASON_LABELS, MATCH_STATUS_DESCRIPTIONS, MATCH_STATUS_LABELS, formatMeasure, formatScore } from "@/lib/matching";
 import { buildQuery, oneOf, positiveInt, text, type QueryValues, type SearchParams } from "@/lib/params";
-import type { CompareResult, MatchDetail, MatchListItem, MatchingConfig, Paginated, ProductAnalysis, ProductListItem } from "@/lib/types";
+import type {
+  Candidate,
+  CompareResult,
+  Competitor,
+  MatchDetail,
+  MatchListItem,
+  MatchingConfig,
+  Paginated,
+  ProductAnalysis,
+  ProductDetail,
+  ProductListItem,
+} from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,6 +53,13 @@ async function findNeighbours(kind: MatchListKind, sp: SearchParams, productId: 
   return { filters, prev: link(here - 1), next: link(here), total: page.data.total, index: null };
 }
 
+// Engine thresholds by name, when the configuration exposes them (keys vary by engine version).
+function threshold(thresholds: Record<string, number> | undefined, word: string): number | null {
+  if (!thresholds) return null;
+  const key = Object.keys(thresholds).find((k) => k.toLowerCase().includes(word) && !k.toLowerCase().includes("gap"));
+  return key ? thresholds[key] : null;
+}
+
 export default async function MatchReviewPage({
   params,
   searchParams,
@@ -56,6 +76,23 @@ export default async function MatchReviewPage({
   const position = positiveInt(sp.pos, 0);
   const find = text(sp.find);
   const compareId = positiveInt(sp.compare, 0) || undefined;
+
+  // Everything that only depends on the URL starts right away, in parallel with the match.
+  const configP = settle(apiFetch<MatchingConfig>("/matching/config"));
+  const competitorsP = settle(apiFetch<Competitor[]>("/competitors"));
+  const productP = settle(apiFetch<ProductDetail>(`/products/${productId}`));
+  const navP = from ? findNeighbours(from, sp, productId, position) : Promise.resolve(null);
+  const comparisonP = compareId ? settle(apiFetch<CompareResult>(`/matching/products/${productId}/compare/${compareId}`)) : Promise.resolve(null);
+  const compareDetailP = compareId ? settle(apiFetch<ProductDetail>(`/products/${compareId}`)) : null;
+  const searchP = find
+    ? configP.then((config) =>
+        settle(
+          apiFetch<Paginated<ProductListItem>>("/products", {
+            query: { competitor: config.data?.reference_competitor ?? "antalis_fr", q: find, status: "active", limit: 10 },
+          }),
+        ),
+      )
+    : Promise.resolve(null);
 
   let match: MatchDetail;
   try {
@@ -88,18 +125,23 @@ export default async function MatchReviewPage({
     );
   }
 
-  const [nav, config] = await Promise.all([
-    from ? findNeighbours(from, sp, productId, position) : Promise.resolve(null),
-    settle(apiFetch<MatchingConfig>("/matching/config")),
+  // The Antalis side: the previewed product, else the association, else the engine proposal.
+  const defaultBrief = match.antalis_product ?? match.proposed_antalis_product;
+  const rightId = compareId ?? defaultBrief?.id;
+  const [config, competitors, product, nav, comparison, search, rightDetail] = await Promise.all([
+    configP,
+    competitorsP,
+    productP,
+    navP,
+    comparisonP,
+    searchP,
+    compareDetailP ?? (rightId ? settle(apiFetch<ProductDetail>(`/products/${rightId}`)) : Promise.resolve(null)),
   ]);
   const referenceKey = config.data?.reference_competitor ?? "antalis_fr";
-
-  const [search, comparison] = await Promise.all([
-    find
-      ? settle(apiFetch<Paginated<ProductListItem>>("/products", { query: { competitor: referenceKey, q: find, status: "active", limit: 10 } }))
-      : Promise.resolve(null),
-    compareId ? settle(apiFetch<CompareResult>(`/matching/products/${productId}/compare/${compareId}`)) : Promise.resolve(null),
-  ]);
+  const origin = (key: string, fallback: string) => {
+    const competitor = competitors.data?.find((c) => c.key === key);
+    return { name: competitor?.name ?? fallback, siteUrl: competitor?.base_url ?? null };
+  };
 
   // Parameters that keep the list context when moving around on this screen.
   const context: QueryValues = from && nav ? { ...nav.filters.values, from, pos: String(nav.index ?? position) } : {};
@@ -113,202 +155,331 @@ export default async function MatchReviewPage({
   const excluded = match.candidates.filter((c) => c.rank === null);
   const proposal = match.antalis_product ?? match.proposed_antalis_product;
   const compared = comparison?.data?.candidate ?? null;
+  // Scores of the pair on screen: the preview, or the engine's own candidate for that product.
+  const shownCandidate: Candidate | null = compareId ? compared : (match.candidates.find((c) => c.antalis_product.id === rightId) ?? null);
+
+  const left = toSide(product.data, match.product, origin(match.competitor_key, match.competitor_key))!;
+  const right = toSide(rightDetail?.data ?? null, compareId ? (compared?.antalis_product ?? null) : defaultBrief, origin(referenceKey, "Antalis"));
+  const rightRole = compareId
+    ? { label: "Previewing your choice", tone: "warning" as const }
+    : match.antalis_product
+      ? match.status === "deprecated"
+        ? { label: "Former association", tone: "violet" as const }
+        : { label: match.manual_choice ? "Associated · manual choice" : "Associated", tone: "success" as const }
+      : match.proposed_antalis_product
+        ? { label: "Engine proposal", tone: "info" as const }
+        : null;
+
+  const queue = nav && nav.index !== null && nav.total !== null ? { index: nav.index, total: nav.total } : null;
 
   return (
     <>
       <KeyboardNav prevHref={nav?.prev?.href ?? null} nextHref={nav?.next?.href ?? null} />
 
-      <nav className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-        <span>
-          <Link href="/matching" className="hover:text-slate-900">
-            Matching
-          </Link>
-          {" / "}
-          <Link href={backHref} className="hover:text-slate-900">
-            {from ? LIST_LABELS[from] : "All matches"}
-          </Link>
-          <span> / #{match.product.id}</span>
-        </span>
-        {nav ? (
-          <span className="flex items-center gap-2">
-            {nav.index !== null && nav.total !== null ? (
-              <span className="text-xs tabular-nums">
-                {formatNumber(nav.index + 1)} of {formatNumber(nav.total)}
-              </span>
-            ) : null}
-            {nav.prev ? (
-              <Link href={nav.prev.href} className={`${secondaryButton} h-8 px-3 text-xs`} title={nav.prev.title ?? undefined}>
-                ← Previous
-              </Link>
-            ) : null}
-            {nav.next ? (
-              <Link href={nav.next.href} className={`${secondaryButton} h-8 px-3 text-xs`} title={nav.next.title ?? undefined}>
-                Next →
-              </Link>
-            ) : null}
-            <span className="hidden text-xs text-slate-400 md:inline">← → to navigate</span>
-          </span>
-        ) : null}
-      </nav>
-
-      <PageHeader
-        title={match.product.title ?? "Untitled product"}
-        description={
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <MatchStatusBadge status={match.status} manualChoice={match.manual_choice} />
-            <span>{match.competitor_key}</span>
-            {match.product.catalog_reference ? <code className="text-xs">{match.product.catalog_reference}</code> : null}
-            <Link href={`/products/${match.product.id}`} className="text-indigo-600 hover:text-indigo-500">
-              Product page
+      {/* Bottom padding keeps the last content above the fixed decision bar. */}
+      <div className="pb-52 sm:pb-36">
+        <nav className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+          <span>
+            <Link href="/matching" className="hover:text-slate-900">
+              Matching
             </Link>
-            <a href={match.product.url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-500">
-              Competitor site ↗
-            </a>
+            {" / "}
+            <Link href={backHref} className="hover:text-slate-900">
+              {from ? LIST_LABELS[from] : "All matches"}
+            </Link>
+            <span> / #{match.product.id}</span>
           </span>
-        }
-        actions={<ScoreGauge score={match.score} />}
-      />
+          <SessionCounter />
+        </nav>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
-          <Card title="Decision" description={MATCH_STATUS_DESCRIPTIONS[match.status]}>
-            <div className="space-y-5">
-              <StatusSummary match={match} />
-              <DecisionPanel
-                productId={match.product.id}
-                proposalTitle={proposal ? (proposal.title ?? `Product #${proposal.id}`) : null}
-                validated={match.status === "validated"}
-                chosen={compared ? { id: compared.antalis_product.id, title: compared.antalis_product.title ?? `Product #${compared.antalis_product.id}` } : null}
-                hasRejections={match.rejected_antalis_products.length > 0}
-                nextHref={nav?.next?.href ?? null}
-              />
+        <ReviewStage key={productId}>
+          <ScoreHero
+            match={match}
+            candidate={shownCandidate}
+            previewing={Boolean(compareId)}
+            semanticMissing={comparison?.data ? !comparison.data.semantic_available : false}
+            auto={threshold(config.data?.thresholds, "auto")}
+            review={threshold(config.data?.thresholds, "review")}
+          />
+
+          {comparison?.error ? (
+            <div className="mb-4">
+              <ApiUnavailable message={`Preview of product #${compareId}: ${comparison.error}`} />
             </div>
-          </Card>
+          ) : null}
 
-          <section id="choose" className="space-y-3">
-            <Card title="Choose another Antalis product" description="Search the reference catalog, then preview the score breakdown before validating.">
-              <form method="get" action={`/matching/products/${productId}#choose`} className="flex flex-wrap items-end gap-2">
-                {Object.entries(context).map(([key, value]) =>
-                  (Array.isArray(value) ? value : value ? [value] : []).map((v) => <input key={`${key}-${v}`} type="hidden" name={key} value={v} />),
-                )}
-                <input className={`${inputClass} w-80 max-w-full`} name="find" defaultValue={find} placeholder="Title, reference, brand…" aria-label="Search Antalis products" />
-                <button type="submit" className={primaryButton}>
-                  Search
-                </button>
-                {find || compareId ? (
-                  <Link href={here({})} className={secondaryButton}>
-                    Clear
-                  </Link>
-                ) : null}
-              </form>
+          <SplitComparison
+            left={left}
+            right={right}
+            rightRole={rightRole}
+            candidate={shownCandidate}
+            empty={
+              <EmptyState title="No Antalis product to compare">
+                The engine proposes nothing for this product.{" "}
+                <a href="#choose" className="text-indigo-600 hover:text-indigo-500">
+                  Search the Antalis catalog
+                </a>{" "}
+                to preview one.
+              </EmptyState>
+            }
+          />
 
-              {search?.error ? <div className="mt-4"><ApiUnavailable message={search.error} /></div> : null}
-              {search?.data ? (
-                search.data.items.length === 0 ? (
-                  <p className="mt-4 text-sm text-slate-500">No Antalis product matches “{find}”.</p>
+          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <div className="space-y-6 xl:col-span-2">
+              <Card title="Matching details" description={MATCH_STATUS_DESCRIPTIONS[match.status]}>
+                <StatusSummary match={match} />
+              </Card>
+
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Candidates <span className="font-normal text-slate-500">· ranked by the engine</span>
+                </h2>
+                {ranked.length > 0 ? (
+                  ranked.map((c) => {
+                    const current = c.antalis_product.id === rightId;
+                    const isDefault = c.antalis_product.id === defaultBrief?.id;
+                    return (
+                      <CandidateCard
+                        key={c.antalis_product.id}
+                        candidate={c}
+                        current={current}
+                        action={
+                          current ? (
+                            <Badge tone="info">Shown above</Badge>
+                          ) : (
+                            <Link
+                              href={`${isDefault ? here({}) : here({ compare: String(c.antalis_product.id) })}#comparison`}
+                              className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+                            >
+                              {isDefault ? "Back to this one" : "Compare side by side"}
+                            </Link>
+                          )
+                        }
+                      />
+                    );
+                  })
                 ) : (
-                  <ul className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200">
-                    {search.data.items.map((p) => (
-                      <li key={p.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                        <div className="min-w-0">
-                          <Link href={`/products/${p.id}`} className="line-clamp-1 text-sm font-medium text-slate-800 hover:text-indigo-600">
-                            {p.title ?? "Untitled product"}
-                          </Link>
-                          <p className="text-xs text-slate-500">
-                            {p.catalog_reference ? <code>{p.catalog_reference}</code> : null} {p.brand ?? ""}
-                          </p>
-                        </div>
-                        <Link
-                          href={`${here({ find, compare: String(p.id) })}#choose`}
-                          className={`${compareId === p.id ? primaryButton : secondaryButton} h-8 shrink-0 px-3 text-xs`}
-                        >
-                          {compareId === p.id ? "Previewing" : "Preview"}
-                        </Link>
+                  <EmptyState title="No compatible candidate">The engine found no Antalis product that can be associated.</EmptyState>
+                )}
+              </section>
+
+              <Card
+                title="Choose another Antalis product"
+                description="Search the reference catalog, then compare it side by side before validating."
+                className="scroll-mt-6"
+              >
+                <div id="choose" className="scroll-mt-24">
+                  <form method="get" action={`/matching/products/${productId}#choose`} className="flex flex-wrap items-end gap-2">
+                    {Object.entries(context).map(([key, value]) =>
+                      (Array.isArray(value) ? value : value ? [value] : []).map((v) => <input key={`${key}-${v}`} type="hidden" name={key} value={v} />),
+                    )}
+                    <input className={`${inputClass} w-80 max-w-full`} name="find" defaultValue={find} placeholder="Title, reference, brand…" aria-label="Search Antalis products" />
+                    <button type="submit" className={primaryButton}>
+                      Search
+                    </button>
+                    {find || compareId ? (
+                      <Link href={here({})} className={secondaryButton}>
+                        Clear
+                      </Link>
+                    ) : null}
+                  </form>
+
+                  {search?.error ? (
+                    <div className="mt-4">
+                      <ApiUnavailable message={search.error} />
+                    </div>
+                  ) : null}
+                  {search?.data ? (
+                    search.data.items.length === 0 ? (
+                      <p className="mt-4 text-sm text-slate-500">No Antalis product matches “{find}”.</p>
+                    ) : (
+                      <ul className="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                        {search.data.items.map((p) => (
+                          <li key={p.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <div className="min-w-0">
+                              <Link href={`/products/${p.id}`} className="line-clamp-1 text-sm font-medium text-slate-800 hover:text-indigo-600">
+                                {p.title ?? "Untitled product"}
+                              </Link>
+                              <p className="text-xs text-slate-500">
+                                {p.catalog_reference ? <code>{p.catalog_reference}</code> : null} {p.brand ?? ""}
+                              </p>
+                            </div>
+                            {compareId === p.id ? (
+                              <Badge tone="warning">Shown above</Badge>
+                            ) : (
+                              <Link href={`${here({ find, compare: String(p.id) })}#comparison`} className={`${secondaryButton} h-8 shrink-0 px-3 text-xs`}>
+                                Compare
+                              </Link>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  ) : null}
+                </div>
+              </Card>
+
+              {excluded.length > 0 ? (
+                <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <summary className="cursor-pointer select-none text-sm font-medium text-slate-900">
+                    Excluded candidates ({excluded.length})
+                    <span className="ml-2 font-normal text-slate-500">certain incompatibilities</span>
+                  </summary>
+                  <div className="mt-4 space-y-3">
+                    {excluded.map((c) => (
+                      <CandidateCard key={c.antalis_product.id} candidate={c} current={c.antalis_product.id === rightId} />
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+
+            <div className="space-y-6">
+              <Card title="History" description={`Revision ${match.revision}`} padded={false}>
+                {match.history.length > 0 ? <MatchEventList events={match.history} /> : <p className="p-5 text-sm text-slate-500">No event yet.</p>}
+              </Card>
+
+              {match.rejected_antalis_products.length > 0 ? (
+                <Card title="Rejected by reviewers" description="Never proposed again">
+                  <ul className="space-y-3">
+                    {match.rejected_antalis_products.map((p) => (
+                      <li key={p.id}>
+                        <ProductCell product={p} />
                       </li>
                     ))}
                   </ul>
-                )
+                </Card>
               ) : null}
-            </Card>
 
-            {comparison?.error ? <ApiUnavailable message={comparison.error} /> : null}
-            {comparison?.data ? (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-900">Preview: score breakdown against the chosen product</p>
-                {!comparison.data.semantic_available ? (
-                  <Notice tone="warning">An embedding is missing for one of the products: the score uses the other criteria only.</Notice>
-                ) : null}
-                <CandidateCard candidate={comparison.data.candidate} />
-                <p className="text-xs text-slate-500">Use “Validate with the chosen product” in the Decision panel above to associate it.</p>
-              </div>
-            ) : null}
-          </section>
+              <Card title="What the engine read" description="Competitor product as analysed for matching">
+                {match.analysis ? <Analysis analysis={match.analysis} /> : <p className="text-sm text-slate-500">The product can no longer be read.</p>}
+              </Card>
+            </div>
+          </div>
+        </ReviewStage>
+      </div>
 
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Candidates <span className="font-normal text-slate-500">· ranked by the engine</span>
-            </h2>
-            {ranked.length > 0 ? (
-              ranked.map((c) => (
-                <CandidateCard
-                  key={c.antalis_product.id}
-                  candidate={c}
-                  action={
-                    !c.is_proposed && !c.is_associated ? (
-                      <Link href={`${here({ compare: String(c.antalis_product.id) })}#choose`} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
-                        Choose this one
-                      </Link>
-                    ) : null
-                  }
-                />
-              ))
-            ) : (
-              <EmptyState title="No compatible candidate">The engine found no Antalis product that can be associated.</EmptyState>
-            )}
+      <DecisionBar
+        key={productId}
+        productId={match.product.id}
+        proposal={proposal ? { id: proposal.id, title: proposal.title ?? `Product #${proposal.id}` } : null}
+        validated={match.status === "validated"}
+        chosen={compared ? { id: compared.antalis_product.id, title: compared.antalis_product.title ?? `Product #${compared.antalis_product.id}` } : null}
+        hasRejections={match.rejected_antalis_products.length > 0}
+        prev={nav?.prev ?? null}
+        next={nav?.next ?? null}
+        queue={queue}
+      />
+    </>
+  );
+}
 
-            {excluded.length > 0 ? (
-              <details className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <summary className="cursor-pointer select-none text-sm font-medium text-slate-900">
-                  Excluded candidates ({excluded.length})
-                  <span className="ml-2 font-normal text-slate-500">certain incompatibilities</span>
-                </summary>
-                <div className="mt-4 space-y-3">
-                  {excluded.map((c) => (
-                    <CandidateCard key={c.antalis_product.id} candidate={c} />
-                  ))}
-                </div>
-              </details>
-            ) : null}
-          </section>
+// Score first: the ring of the pair on screen, its sub-scores, the gap to the runner-up and
+// what blocks or flags the association.
+function ScoreHero({
+  match,
+  candidate,
+  previewing,
+  semanticMissing,
+  auto,
+  review,
+}: {
+  match: MatchDetail;
+  candidate: Candidate | null;
+  previewing: boolean;
+  semanticMissing: boolean;
+  auto: number | null;
+  review: number | null;
+}) {
+  const score = candidate?.score ?? (previewing ? null : match.score);
+  const delta = previewing && candidate && match.score !== null ? candidate.score - match.score : null;
+  return (
+    <section className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center">
+        <div className="flex items-center gap-4 md:block">
+          <ScoreRing score={score} auto={auto} review={review} label={previewing ? "Preview" : "Score"} />
         </div>
 
-        <div className="space-y-6">
-          <Card title="What the engine read" description="Competitor product as analysed for matching">
-            {match.analysis ? <Analysis analysis={match.analysis} /> : <p className="text-sm text-slate-500">The product can no longer be read.</p>}
-          </Card>
-
-          {match.rejected_antalis_products.length > 0 ? (
-            <Card title="Rejected by reviewers" description="Never proposed again">
-              <ul className="space-y-3">
-                {match.rejected_antalis_products.map((p) => (
-                  <li key={p.id}>
-                    <ProductCell product={p} />
-                  </li>
-                ))}
-              </ul>
-            </Card>
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <MatchStatusBadge status={match.status} manualChoice={match.manual_choice} />
+              <span>{match.competitor_key}</span>
+              {match.product.catalog_reference ? <code>{match.product.catalog_reference}</code> : null}
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">{match.product.title ?? "Untitled product"}</h1>
+            <p className="text-sm text-slate-500">
+              {previewing ? (
+                <>
+                  Engine’s best candidate {formatScore(match.score)}
+                  {delta !== null ? (
+                    <span className={delta >= 0 ? "text-emerald-700" : "text-rose-700"}>
+                      {" "}
+                      · this choice {delta >= 0 ? "+" : "−"}
+                      {formatScore(Math.abs(delta))}
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  2nd candidate {formatScore(match.runner_up_score)} · gap <span className="font-medium text-slate-700">{formatScore(match.score_gap)}</span>
+                  {auto !== null ? <span className="text-slate-400"> · automatic from {formatScore(auto)}</span> : null}
+                </>
+              )}
+            </p>
+          </div>
+          {candidate ? (
+            <div className="grid max-w-xl grid-cols-3 gap-4">
+              <SubScore label="Semantic" value={candidate.semantic_score} weight={candidate.weights.semantic} />
+              <SubScore label="Lexical" value={candidate.lexical_score} weight={candidate.weights.lexical} />
+              <SubScore label="Dimensions" value={candidate.dimension_score} weight={candidate.weights.dimensions} />
+            </div>
           ) : null}
+        </div>
 
-          <Card title="History" description={`Revision ${match.revision}`} padded={false}>
-            {match.history.length > 0 ? (
-              <MatchEventList events={match.history} />
-            ) : (
-              <p className="p-5 text-sm text-slate-500">No event yet.</p>
-            )}
-          </Card>
+        <div className="space-y-2 md:w-80">
+          {semanticMissing ? (
+            <Notice tone="warning">An embedding is missing for one of the products: the score uses the other criteria only.</Notice>
+          ) : null}
+          {candidate && candidate.exclusions.length > 0 ? <Flags title="Cannot be associated" tone="danger" messages={candidate.exclusions.map((f) => f.message)} /> : null}
+          {candidate && candidate.review_flags.length > 0 ? (
+            <Flags title="Prevents an automatic association" tone="warning" messages={candidate.review_flags.map((f) => f.message)} />
+          ) : null}
+          {candidate && candidate.exclusions.length === 0 && candidate.review_flags.length === 0 ? (
+            <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <span aria-hidden>✓</span> No conflict detected by the engine
+            </p>
+          ) : null}
+          {candidate?.rejected_by_human ? <Flags title="Already rejected by a reviewer" tone="danger" messages={[]} /> : null}
+          {match.decision_reasons.length > 0 && !previewing ? (
+            <div className="text-xs">
+              <DecisionReasons reasons={match.decision_reasons} compact />
+            </div>
+          ) : null}
         </div>
       </div>
-    </>
+    </section>
+  );
+}
+
+function Flags({ title, tone, messages }: { title: string; tone: "danger" | "warning"; messages: string[] }) {
+  return (
+    <div
+      className={
+        tone === "danger"
+          ? "rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
+          : "rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+      }
+    >
+      <p className="font-medium">{title}</p>
+      {messages.length > 0 ? (
+        <ul className="mt-0.5 list-disc pl-4">
+          {messages.map((m) => (
+            <li key={m}>{m}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -321,13 +492,11 @@ function StatusSummary({ match }: { match: MatchDetail }) {
         <Notice tone="warning">
           Obsolete{match.deprecated_reason ? `: ${DEPRECATED_REASON_LABELS[match.deprecated_reason].toLowerCase()}` : ""}
           {match.deprecated_at ? ` (${formatDateTime(match.deprecated_at)})` : ""}. Previous status:{" "}
-          {match.previous_status ? MATCH_STATUS_LABELS[match.previous_status] : "—"}. The former association below stays visible until the
-          next run.
+          {match.previous_status ? MATCH_STATUS_LABELS[match.previous_status] : "—"}. The former association stays visible until the next
+          run.
         </Notice>
       ) : null}
-      {match.outdated_config ? (
-        <Notice>Computed with an older matching configuration: the next incremental run refreshes it.</Notice>
-      ) : null}
+      {match.outdated_config ? <Notice>Computed with an older matching configuration: the next incremental run refreshes it.</Notice> : null}
 
       <DefinitionList
         items={[
@@ -339,10 +508,11 @@ function StatusSummary({ match }: { match: MatchDetail }) {
           {
             label: "Score",
             value: (
-              <span className="inline-flex flex-wrap items-center gap-3">
-                <ScoreGauge score={match.score} />
+              <span className="tabular-nums">
+                {formatScore(match.score)}
                 <span className="text-xs text-slate-500">
-                  2nd candidate {formatScore(match.runner_up_score)} · gap {formatScore(match.score_gap)}
+                  {" "}
+                  · 2nd candidate {formatScore(match.runner_up_score)} · gap {formatScore(match.score_gap)}
                 </span>
               </span>
             ),

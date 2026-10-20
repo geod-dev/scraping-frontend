@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-// Left/right arrows (or k/j) open the previous/next item, unless the user is typing.
+// Left/right arrows (or k/j) open the previous/next item, unless the user is typing or a
+// modal dialog is open.
 export function KeyboardNav({ prevHref, nextHref }: { prevHref: string | null; nextHref: string | null }) {
   const router = useRouter();
 
@@ -12,6 +13,7 @@ export function KeyboardNav({ prevHref, nextHref }: { prevHref: string | null; n
       if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (document.querySelector("dialog[open]")) return;
       if ((event.key === "ArrowRight" || event.key === "j") && nextHref) router.push(nextHref);
       else if ((event.key === "ArrowLeft" || event.key === "k") && prevHref) router.push(prevHref);
     }

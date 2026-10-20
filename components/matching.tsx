@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { Badge, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import { MATCH_EVENT_LABELS, MATCH_STATUS_DESCRIPTIONS, MATCH_STATUS_LABELS, decisionReasonLabel, formatScore } from "@/lib/matching";
@@ -56,6 +57,81 @@ export function ScoreGauge({ score, className }: { score: number | null | undefi
       </span>
       <span className="sr-only">Similarity score {formatScore(score)} out of 100</span>
     </span>
+  );
+}
+
+const RING_RADIUS = 42;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+
+// Large circular gauge of a 0-100 similarity score, coloured against the engine thresholds
+// (automatic association / review band), which are drawn as ticks on the ring. The arc fills on
+// mount through a CSS animation (disabled by prefers-reduced-motion).
+export function ScoreRing({
+  score,
+  auto,
+  review,
+  label,
+  size = 128,
+}: {
+  score: number | null | undefined;
+  auto?: number | null;
+  review?: number | null;
+  label?: string;
+  size?: number;
+}) {
+  const value = score === null || score === undefined ? null : Math.min(100, Math.max(0, score));
+  const tone =
+    value === null
+      ? "text-slate-300"
+      : auto == null || review == null
+        ? "text-indigo-500"
+        : value >= auto
+          ? "text-emerald-500"
+          : value >= review
+            ? "text-amber-500"
+            : "text-rose-500";
+  const ticks = [auto, review].filter((t): t is number => typeof t === "number" && t > 0 && t < 100);
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }} title="Similarity score (0-100), not a probability">
+      <svg viewBox="0 0 100 100" className="size-full" aria-hidden>
+        <circle cx="50" cy="50" r={RING_RADIUS} fill="none" strokeWidth="9" className="stroke-slate-100" />
+        {value !== null ? (
+          <circle
+            cx="50"
+            cy="50"
+            r={RING_RADIUS}
+            fill="none"
+            strokeWidth="9"
+            strokeLinecap="round"
+            stroke="currentColor"
+            className={cx("score-ring-arc", tone)}
+            strokeDasharray={RING_LENGTH}
+            strokeDashoffset={RING_LENGTH * (1 - value / 100)}
+            transform="rotate(-90 50 50)"
+            style={{ "--ring-length": RING_LENGTH } as CSSProperties}
+          />
+        ) : null}
+        {ticks.map((t) => (
+          <line
+            key={t}
+            x1="50"
+            y1={50 - RING_RADIUS - 6.5}
+            x2="50"
+            y2={50 - RING_RADIUS + 6.5}
+            strokeWidth="1.5"
+            className="stroke-slate-400"
+            transform={`rotate(${(t / 100) * 360} 50 50)`}
+          />
+        ))}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="fade-up text-3xl font-semibold tabular-nums tracking-tight text-slate-900">{formatScore(value)}</span>
+        {label ? <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</span> : null}
+      </div>
+      <span className="sr-only">
+        {label ?? "Score"} {formatScore(value)} out of 100
+      </span>
+    </div>
   );
 }
 
