@@ -10,7 +10,7 @@ const ITEMS = [
   { href: "/categories", label: "Categories", icon: "M3 6h6l2 2h10v10H3z" },
   { href: "/jobs", label: "Jobs", icon: "M12 6v6l4 2M12 3a9 9 0 110 18 9 9 0 010-18z" },
   { href: "/runs", label: "Runs", icon: "M5 4v16l14-8z" },
-  { href: "/matches", label: "Matches", icon: "M8 7h8M8 12h8M8 17h5M4 4h16v16H4z" },
+  { href: "/matching", label: "Matching", icon: "M8 7h8M8 12h8M8 17h5M4 4h16v16H4z" },
   { href: "/notifications", label: "Notifications", icon: "M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9zM13.7 21a2 2 0 01-3.4 0" },
 ];
 

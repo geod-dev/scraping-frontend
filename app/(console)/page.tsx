@@ -1,19 +1,24 @@
 import Link from "next/link";
 import { ApiUnavailable, Badge, Card, EmptyState, PageHeader, ProgressBar, StatCard, StatusBadge } from "@/components/ui";
+import { NotificationLinks } from "@/components/notification-links";
 import { apiFetch, settle } from "@/lib/api";
 import { formatDateTime, formatNumber, formatRelative, labelize } from "@/lib/format";
-import type { Competitor, Health, Job, Notification, Paginated, Stats } from "@/lib/types";
+import type { Competitor, Health, Job, MatchingSummary, Notification, Paginated, Stats } from "@/lib/types";
 
 export default async function OverviewPage() {
-  const [health, stats, competitors, jobs, notifications] = await Promise.all([
+  const [health, stats, competitors, jobs, notifications, matching] = await Promise.all([
     settle(apiFetch<Health>("/health")),
     settle(apiFetch<Stats>("/stats")),
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(apiFetch<Paginated<Job>>("/jobs", { query: { limit: 5 } })),
     settle(apiFetch<Paginated<Notification>>("/notifications", { query: { unread: true, limit: 5 } })),
+    settle(apiFetch<MatchingSummary[]>("/matching/summary")),
   ]);
 
   const apiOk = health.data?.status === "ok";
+  const competitorKeys = new Map(competitors.data?.map((c) => [c.id, c.key]));
+  const toReview = matching.data?.reduce((sum, s) => sum + s.needs_review, 0);
+  const obsolete = matching.data?.reduce((sum, s) => sum + s.deprecated, 0);
 
   return (
     <>
@@ -61,6 +66,13 @@ export default async function OverviewPage() {
           value={health.data?.worker.online ? "Online" : "Offline"}
           hint={health.data?.worker.auto_schedule ? "Auto-schedule on" : "Manual scheduling"}
         />
+        <StatCard
+          label="Matches to review"
+          value={formatNumber(toReview)}
+          hint={obsolete ? `${formatNumber(obsolete)} obsolete` : "Antalis matching"}
+          tone={toReview ? "warning" : "default"}
+          href={obsolete && !toReview ? "/matching/deprecated" : "/matching/review"}
+        />
       </section>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-3">
@@ -104,7 +116,7 @@ export default async function OverviewPage() {
 
           <Card
             title="Latest jobs"
-            description="Most recent catalog syncs and price refreshes"
+            description="Most recent catalog syncs, price refreshes and matching runs"
             padded={false}
             actions={
               <Link href="/jobs" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
@@ -128,6 +140,7 @@ export default async function OverviewPage() {
                         <p className="text-xs text-slate-500">
                           {job.competitor_key} · {formatDateTime(job.created_at)}
                         </p>
+                        {job.requested_by === "auto_resume" ? <Badge tone="violet">Auto resume</Badge> : null}
                       </div>
                       <div className="flex items-center gap-3">
                         {job.status === "running" || job.status === "paused" ? (
@@ -172,6 +185,7 @@ export default async function OverviewPage() {
                         <p className="text-sm font-medium text-slate-900">{n.title}</p>
                         {n.message ? <p className="line-clamp-2 text-xs text-slate-500">{n.message}</p> : null}
                         <p className="mt-1 text-xs text-slate-400">{formatRelative(n.created_at)}</p>
+                        <NotificationLinks notification={n} competitorKey={competitorKeys.get(n.competitor_id ?? -1)} />
                       </div>
                     </div>
                   </li>

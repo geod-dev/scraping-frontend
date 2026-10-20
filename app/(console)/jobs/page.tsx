@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ApiUnavailable, EmptyState, FilterBar, Field, PageHeader, Pagination, ProgressBar, StatusBadge, Table, Td, Th, inputClass, primaryButton, secondaryButton, Card } from "@/components/ui";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { JobOrigin } from "@/components/job-progress";
 import { apiFetch, settle } from "@/lib/api";
 import { formatDateTime, formatDuration, formatNumber, labelize } from "@/lib/format";
 import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
@@ -14,7 +15,7 @@ const JOB_STATUSES = ["queued", "running", "paused", "succeeded", "partial", "fa
 export default async function JobsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const competitor = text(sp.competitor, 64);
-  const task = oneOf(sp.task, ["catalog_sync", "price_refresh"] as const);
+  const task = oneOf(sp.task, ["catalog_sync", "price_refresh", "matching"] as const);
   const status = oneOf(sp.status, JOB_STATUSES);
   const active = boolFlag(sp.active);
   const offset = positiveInt(sp.offset, 0);
@@ -40,7 +41,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader
         title="Jobs"
-        description="Catalog syncs and price refreshes, newest first."
+        description="Catalog syncs, price refreshes and matching runs, newest first."
         actions={<AutoRefresh enabled={hasActive} />}
       />
 
@@ -60,6 +61,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             <option value="">Any task</option>
             <option value="catalog_sync">Catalog sync</option>
             <option value="price_refresh">Price refresh</option>
+            <option value="matching">Matching</option>
           </select>
         </Field>
         <Field label="Status">
@@ -117,6 +119,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                           #{job.id}
                         </Link>
                         <div className="text-xs text-slate-500">{labelize(job.task)}</div>
+                        <JobOrigin job={job} />
                       </Td>
                       <Td>{job.competitor_key}</Td>
                       <Td>

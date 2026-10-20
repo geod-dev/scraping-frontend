@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { markAllNotificationsRead, setNotificationRead } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
+import { NotificationLinks } from "@/components/notification-links";
 import { ApiUnavailable, Card, EmptyState, Field, FilterBar, PageHeader, Pagination, StatusBadge, inputClass, primaryButton, secondaryButton } from "@/components/ui";
 import { apiFetch, settle } from "@/lib/api";
 import { formatDateTime, formatRelative, labelize } from "@/lib/format";
@@ -10,11 +11,29 @@ import type { Competitor, Notification, Paginated, UnreadCount } from "@/lib/typ
 export const metadata = { title: "Notifications" };
 
 const PAGE_SIZE = 25;
+const KINDS = [
+  "job_started",
+  "job_paused",
+  "job_resumed",
+  "job_succeeded",
+  "job_partial",
+  "job_failed",
+  "job_cancelled",
+  "job_interrupted",
+  "job_crashed",
+  "job_auto_resumed",
+  "job_auto_resume_stopped",
+  "error_burst",
+  "page_errors",
+  "matching_summary",
+  "matches_deprecated",
+] as const;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const unread = boolFlag(sp.unread);
   const level = oneOf(sp.level, ["info", "success", "warning", "error"] as const);
+  const kind = oneOf(sp.kind, KINDS);
   const competitor = text(sp.competitor, 64);
   const offset = positiveInt(sp.offset, 0);
 
@@ -22,15 +41,17 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(
       apiFetch<Paginated<Notification>>("/notifications", {
-        query: { unread, level: level ? [level] : undefined, competitor, limit: PAGE_SIZE, offset },
+        query: { unread, level: level ? [level] : undefined, kind: kind ? [kind] : undefined, competitor, limit: PAGE_SIZE, offset },
       }),
     ),
     settle(apiFetch<UnreadCount>("/notifications/unread-count", { query: { competitor } })),
   ]);
 
+  const competitorKeys = new Map(competitors.data?.map((c) => [c.id, c.key]));
   const paging = {
     unread: unread === undefined ? undefined : unread ? "1" : "0",
     level,
+    kind,
     competitor,
   };
 
@@ -66,6 +87,16 @@ export default async function NotificationsPage({ searchParams }: { searchParams
             <option value="">All</option>
             <option value="1">Unread</option>
             <option value="0">Read</option>
+          </select>
+        </Field>
+        <Field label="Kind">
+          <select className={inputClass} name="kind" defaultValue={kind ?? ""}>
+            <option value="">Any</option>
+            {KINDS.map((k) => (
+              <option key={k} value={k}>
+                {labelize(k)}
+              </option>
+            ))}
           </select>
         </Field>
         <Field label="Level">
@@ -109,18 +140,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                         <p className="mt-1 text-xs text-slate-400">
                           {labelize(n.kind)} · {formatRelative(n.created_at)} · {formatDateTime(n.created_at)}
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                          {n.job_id ? (
-                            <Link href={`/jobs/${n.job_id}`} className="text-indigo-600 hover:text-indigo-500">
-                              Job #{n.job_id}
-                            </Link>
-                          ) : null}
-                          {n.scrape_run_id ? (
-                            <Link href={`/runs/${n.scrape_run_id}`} className="text-indigo-600 hover:text-indigo-500">
-                              Run #{n.scrape_run_id}
-                            </Link>
-                          ) : null}
-                        </div>
+                        <NotificationLinks notification={n} competitorKey={competitorKeys.get(n.competitor_id ?? -1)} />
                       </div>
                     </div>
                     <div className="shrink-0">

@@ -4,8 +4,14 @@ Web dashboard for the competitor catalog scraping API
 (`docs/openapi.json`, OpenAPI 3.1, v0.1.0).
 
 It covers overview and health, competitors and their workers, products with price
-history, the category tree, jobs (live progress, pause/resume/cancel), runs and their
-items, product matches (validate/reject), and notifications.
+history, the category tree, jobs (live progress, pause/resume/cancel, restart of an
+interrupted/failed/cancelled job), runs and their items (retry of the failed pages),
+notifications, and the matching of competitor products with the Antalis reference catalog
+(`/matching`: per-competitor overview and runs, review queue, review screen with the score
+breakdown of every candidate, all matches, obsolete matches, event history).
+
+Matching scores are similarity scores on a 0-100 scale, not probabilities: never show them
+as a percentage.
 
 ## Stack
 

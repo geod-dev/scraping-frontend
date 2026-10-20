@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { labelize } from "@/lib/format";
+import { buildQuery, type QueryValues } from "@/lib/params";
 
 const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
 
@@ -125,10 +126,13 @@ const STATUS_TONES: Record<string, keyof typeof BADGE_TONES> = {
   not_found: "warning",
   no_price: "warning",
   skipped: "neutral",
-  // matches
-  proposed: "info",
+  // matching
+  auto_matched: "info",
   validated: "success",
+  needs_review: "warning",
+  no_match: "neutral",
   rejected: "danger",
+  deprecated: "violet",
   // notifications
   info: "info",
   warning: "warning",
@@ -245,7 +249,7 @@ export function Pagination({
   offset,
 }: {
   basePath: string;
-  query: Record<string, string | undefined>;
+  query: QueryValues;
   total: number;
   limit: number;
   offset: number;
@@ -254,10 +258,7 @@ export function Pagination({
   const page = Math.floor(offset / limit) + 1;
   const pages = Math.ceil(total / limit);
   const href = (nextOffset: number) => {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) if (value) params.set(key, value);
-    if (nextOffset > 0) params.set("offset", String(nextOffset));
-    const qs = params.toString();
+    const qs = buildQuery({ ...query, offset: nextOffset > 0 ? String(nextOffset) : undefined });
     return qs ? `${basePath}?${qs}` : basePath;
   };
   const linkClass =

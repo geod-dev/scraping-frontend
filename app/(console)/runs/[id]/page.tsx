@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { retryFailedRun } from "@/app/actions";
+import { ActionButton } from "@/components/action-button";
 import { ApiUnavailable, Badge, Card, DefinitionList, EmptyState, Field, FilterBar, PageHeader, Pagination, StatCard, StatusBadge, Table, Td, Th, inputClass, primaryButton, secondaryButton } from "@/components/ui";
 import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatDuration, formatNumber, labelize } from "@/lib/format";
-import { oneOf, positiveInt, type SearchParams } from "@/lib/params";
+import { buildQuery, oneOf, positiveInt, type SearchParams } from "@/lib/params";
 import type { Paginated, RunDetail, RunItem } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -48,6 +50,10 @@ export default async function RunDetailPage({
     }),
   );
 
+  const failedItems = Object.values(run.item_counts ?? {}).reduce((sum, byStatus) => sum + (byStatus.failed ?? 0), 0);
+  const hasFailures = run.pages_failed > 0 || run.products_failed > 0 || failedItems > 0;
+  const retryScope = run.operation === "catalog_discovery" ? "failed product and category pages" : "failed products";
+
   const duration = run.finished_at ? (new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000 : null;
   const paging = { status: itemStatus, item_type: itemType };
 
@@ -68,6 +74,20 @@ export default async function RunDetailPage({
             <span>Started {formatDateTime(run.started_at)}</span>
             {run.full_scope ? <Badge tone="violet">Full scope</Badge> : null}
           </span>
+        }
+        actions={
+          hasFailures && run.status !== "running" ? (
+            <ActionButton
+              action={retryFailedRun}
+              input={{ id: run.id }}
+              label="Retry failed pages"
+              pendingLabel="Starting…"
+              variant="primary"
+              title={`Queue a job that only refetches the ${retryScope} of this run`}
+              confirmMessage={`Queue a job that only refetches the ${retryScope} of this run? This will use scraping credits.`}
+              followResult
+            />
+          ) : null
         }
       />
 
@@ -203,14 +223,26 @@ export default async function RunDetailPage({
 
           <Card title="Item counts">
             {Object.keys(run.item_counts ?? {}).length > 0 ? (
-              <ul className="space-y-2 text-sm">
-                {Object.entries(run.item_counts).map(([key, value]) => (
-                  <li key={key} className="flex items-center justify-between">
-                    <span className="text-slate-600">{labelize(key)}</span>
-                    <span className="font-medium tabular-nums text-slate-900">{formatNumber(value)}</span>
-                  </li>
+              <div className="space-y-4">
+                {Object.entries(run.item_counts).map(([itemType, byStatus]) => (
+                  <div key={itemType}>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">{labelize(itemType)}</p>
+                    <ul className="space-y-1.5 text-sm">
+                      {Object.entries(byStatus).map(([status, count]) => (
+                        <li key={status} className="flex items-center justify-between">
+                          <Link
+                            href={`/runs/${run.id}?${buildQuery({ status, item_type: itemType })}`}
+                            className="text-slate-600 hover:text-indigo-600"
+                          >
+                            {labelize(status)}
+                          </Link>
+                          <span className="font-medium tabular-nums text-slate-900">{formatNumber(count)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             ) : (
               <p className="text-sm text-slate-500">No item counts recorded.</p>
             )}

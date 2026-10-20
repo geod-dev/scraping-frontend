@@ -18,7 +18,20 @@ export class ApiError extends Error {
   }
 }
 
-type QueryValue = string | number | boolean | null | undefined | Array<string | number>;
+// Clearer wording for error codes the UI can hit; other codes keep the API message.
+const ERROR_MESSAGES: Record<string, string> = {
+  matching_reference: "Antalis is the reference catalog: its products are not matched.",
+  reference_catalog_required: "The Antalis catalog has not been fully synced yet: run an Antalis catalog sync first.",
+  reference_missing: "The Antalis catalog is not in the database yet.",
+  matching_not_configured: "Matching is not configured on the server (no Voyage API key).",
+  match_not_found: "This product has not been matched yet.",
+  invalid_antalis_product: "The chosen product is not an Antalis product.",
+  antalis_product_required: "There is no proposal to validate: choose an Antalis product.",
+  job_not_restartable: "Only interrupted, failed or cancelled jobs can be restarted.",
+  nothing_to_retry: "This run has no failed pages left to retry.",
+};
+
+type QueryValue =string | number | boolean | null | undefined | Array<string | number>;
 
 export type ApiRequest = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -107,7 +120,7 @@ export async function apiFetch<T>(path: string, request: ApiRequest = {}): Promi
 
   if (!response.ok) {
     const { message, code } = extractMessage(payload, `API request failed (${response.status}).`);
-    throw new ApiError(response.status, message, code);
+    throw new ApiError(response.status, (code && ERROR_MESSAGES[code]) || message, code);
   }
 
   return payload as T;

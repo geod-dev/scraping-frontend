@@ -10,7 +10,7 @@ export type Paginated<T> = {
 
 export type CategoryStatus = "active" | "missing";
 export type ProductStatus = "active" | "missing";
-export type TaskName = "catalog_sync" | "price_refresh";
+export type TaskName = "catalog_sync" | "price_refresh" | "matching";
 export type JobStatus =
   | "queued"
   | "running"
@@ -32,8 +32,15 @@ export type RunStatus = "running" | "succeeded" | "partial" | "failed" | "aborte
 export type RunOperation = "catalog_discovery" | "price_refresh";
 export type ItemStatus = "succeeded" | "failed" | "not_found" | "no_price" | "skipped";
 export type ItemType = "listing_page" | "product";
-export type MatchStatus = "proposed" | "validated" | "rejected";
 export type NotificationLevel = "info" | "success" | "warning" | "error";
+export type TaskUnavailableReason =
+  | "worker_busy"
+  | "catalog_required"
+  | "competitor_disabled"
+  | "matching_reference"
+  | "reference_missing"
+  | "matching_not_configured"
+  | "reference_catalog_required";
 
 export type Health = {
   status: "ok" | "degraded";
@@ -74,6 +81,7 @@ export type Progress = {
   requests_total?: number | null;
   requests_total_is_estimate?: boolean;
   seconds_per_request?: number | null;
+  seconds_per_request_measured?: boolean;
   elapsed_seconds?: number | null;
   paused_seconds?: number;
   eta_seconds?: number | null;
@@ -85,7 +93,11 @@ export type Progress = {
 export type Estimate = {
   task: TaskName;
   listing_pages?: number | null;
+  // Matching: products to score.
   products?: number | null;
+  // Matching: product texts to embed (the others are cached).
+  embeddings?: number | null;
+  // HTTP requests (matching: Voyage AI requests).
   requests?: number | null;
   seconds_per_request: number;
   seconds?: number | null;
@@ -109,6 +121,8 @@ export type Job = {
   pause_requested_at: string | null;
   paused_at: string | null;
   scrape_run_id: number | null;
+  // The job this one restarts (manual restart or automatic resume).
+  resumed_from_job_id?: number | null;
   step: string | null;
   step_label: string | null;
   step_done: number;
@@ -125,8 +139,10 @@ export type Worker = {
   state: WorkerState;
   job: Job | null;
   last_job: Job | null;
-  tasks: Record<string, { allowed: boolean; reason?: "worker_busy" | "catalog_required" | "competitor_disabled" | null }>;
+  tasks: Record<string, TaskAvailability>;
 };
+
+export type TaskAvailability = { allowed: boolean; reason?: TaskUnavailableReason | null };
 
 export type Competitor = {
   id: number;
@@ -147,7 +163,8 @@ export type Competitor = {
 
 export type CompetitorDetail = Competitor & {
   config: Record<string, unknown>;
-  estimates: Record<string, unknown>;
+  // Per task, with default options (no matching entry for the reference competitor).
+  estimates: Partial<Record<TaskName, Estimate>>;
 };
 
 export type CategoryRef = {
@@ -237,7 +254,6 @@ export type ProductListItem = {
   category_id: number | null;
   identity_key: string;
   catalog_reference: string | null;
-  antalis_reference: string | null;
   external_id: string | null;
   url: string;
   title: string | null;
@@ -263,7 +279,11 @@ export type ProductDetail = ProductListItem & {
   last_seen_run_id: number | null;
   category_path: CategoryRef[];
   latest_prices: Observation[];
+  // Associations (auto_matched or validated) involving this product: competitor products
+  // associated with it for a reference product, 0 or 1 for a competitor product.
   match_count: number;
+  // Matching state of a competitor product (null for a reference product or before any run).
+  matching?: MatchBrief | null;
 };
 
 export type ProductFacets = {
@@ -300,7 +320,8 @@ export type Run = {
 
 export type RunDetail = Run & {
   stats: Record<string, unknown>;
-  item_counts: Record<string, number>;
+  // item_type -> status -> count
+  item_counts: Record<string, Record<string, number>>;
 };
 
 export type RunItem = {
@@ -318,19 +339,218 @@ export type RunItem = {
   created_at: string;
 };
 
-export type ProductMatch = {
+// --- Product matching (competitor products -> Antalis reference catalog) ---
+
+export type MatchStatus = "auto_matched" | "needs_review" | "no_match" | "validated" | "rejected" | "deprecated";
+export type DeprecatedReason =
+  | "product_changed"
+  | "antalis_product_changed"
+  | "antalis_product_missing"
+  | "antalis_product_deleted"
+  | "reset_requested";
+export type MatchEventKind = "computed" | "recomputed" | "validated" | "rejected" | "deprecated" | "reset";
+export type MatchingMode = "incremental" | "deprecated" | "all";
+export type MatchSort = "score" | "score_gap" | "updated_at" | "computed_at" | "decided_at" | "deprecated_at" | "title" | "id";
+
+export type ProductBrief = {
   id: number;
-  product_a_id: number;
-  product_b_id: number;
-  match_type: string;
-  confidence: string | null;
+  competitor_id: number;
+  competitor_key: string;
+  catalog_reference: string | null;
+  title: string | null;
+  url: string;
+  brand: string | null;
+  category: string | null;
+  status: ProductStatus;
+  normalized_attributes?: Record<string, unknown> | null;
+};
+
+export type MatchBrief = {
+  match_id: number;
   status: MatchStatus;
-  method: string | null;
-  evidence: Record<string, unknown>;
-  validated_by: string | null;
-  validated_at: string | null;
+  antalis_product_id: number | null;
+  proposed_antalis_product_id: number | null;
+  score: number | null;
+};
+
+export type Reason = { code: string; message: string };
+
+export type MatchListItem = {
+  id: number;
+  competitor_id: number;
+  competitor_key: string;
+  status: MatchStatus;
+  // The competitor product.
+  product: ProductBrief;
+  // The associated reference product (auto_matched / validated, kept when deprecated).
+  antalis_product: ProductBrief | null;
+  // The engine's best candidate.
+  proposed_antalis_product: ProductBrief | null;
+  // Similarity score on a 0-100 scale, NOT a probability.
+  score: number | null;
+  runner_up_score: number | null;
+  score_gap: number | null;
+  dimensions_compared: boolean;
+  decision_reasons: Reason[];
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_comment: string | null;
+  manual_choice: boolean;
+  deprecated_at: string | null;
+  deprecated_reason: DeprecatedReason | null;
+  previous_status: MatchStatus | null;
+  computed_at: string | null;
+  job_id: number | null;
+  outdated_config: boolean;
+  revision: number;
   created_at: string;
   updated_at: string;
+};
+
+export type DimensionValue = { label: string; unit: string; value: number[]; source: string };
+
+export type ProductAnalysis = {
+  title: string;
+  description_used: string | null;
+  category: string | null;
+  dimensions: Record<string, DimensionValue>;
+  product_type: string | null;
+  product_type_source: string | null;
+  features: Record<string, string[]>;
+};
+
+export type Signal = { cosine: number | null; score: number | null };
+
+export type Measure = {
+  key: string;
+  label: string;
+  unit: string;
+  competitor: number[] | null;
+  reference: number[] | null;
+  competitor_source?: string | null;
+  reference_source?: string | null;
+  relative_difference?: number | null;
+  // 0..1; null when the measure is missing on one side.
+  score?: number | null;
+};
+
+export type Feature = {
+  key: string;
+  competitor: unknown;
+  reference: unknown;
+  status: "match" | "conflict" | "unknown";
+  policy?: "exclude" | "review" | null;
+};
+
+export type Difference = {
+  kind: "dimension" | "feature";
+  field: string;
+  label?: string | null;
+  competitor: unknown;
+  reference: unknown;
+  unit?: string | null;
+  relative_difference?: number | null;
+};
+
+export type Flag = { code: string; message: string; field?: string | null };
+
+export type Candidate = {
+  // 1 = best; null for an excluded candidate.
+  rank: number | null;
+  excluded: boolean;
+  antalis_product: ProductBrief;
+  score: number;
+  // Sub-scores 0..1; null = not comparable.
+  semantic_score: number | null;
+  lexical_score: number | null;
+  dimension_score: number | null;
+  is_proposed: boolean;
+  is_associated: boolean;
+  rejected_by_human: boolean;
+  weights: Record<string, number>;
+  semantic: Signal;
+  lexical: Signal & { shared_terms?: string[] };
+  dimensions: { comparable: boolean; score: number | null; measures: Measure[] };
+  features: Feature[];
+  differences: Difference[];
+  // Certain incompatibilities: the candidate cannot be associated.
+  exclusions: Flag[];
+  // Conflicts that forbid an automatic association.
+  review_flags: Flag[];
+  retrieved_by: string[];
+};
+
+export type MatchEvent = {
+  id: number;
+  match_id: number;
+  product_id: number;
+  competitor_id: number;
+  event: MatchEventKind;
+  from_status: MatchStatus | null;
+  to_status: MatchStatus | null;
+  from_antalis_product_id: number | null;
+  to_antalis_product_id: number | null;
+  score: number | null;
+  actor: string;
+  reason: string | null;
+  job_id: number | null;
+  data: Record<string, unknown>;
+  created_at: string;
+  product_title?: string | null;
+};
+
+export type MatchDetail = MatchListItem & {
+  analysis: ProductAnalysis | null;
+  candidates: Candidate[];
+  rejected_antalis_products: ProductBrief[];
+  history: MatchEvent[];
+};
+
+export type CompareResult = {
+  product: ProductBrief;
+  analysis: ProductAnalysis;
+  candidate: Candidate;
+  // False when an embedding is missing: the score uses the other criteria.
+  semantic_available: boolean;
+};
+
+export type MatchingAvailability = {
+  allowed: boolean;
+  reason?: TaskUnavailableReason | null;
+  message?: string | null;
+};
+
+export type MatchingSummary = {
+  competitor_id: number;
+  competitor_key: string;
+  competitor_name: string;
+  availability: MatchingAvailability;
+  counts: Record<string, number>;
+  eligible_products: number;
+  never_matched: number;
+  needs_review: number;
+  deprecated: number;
+  outdated_by_config: number | null;
+  embedding_tokens: number;
+  last_computed_at: string | null;
+  job?: Job | null;
+  last_job?: Job | null;
+};
+
+export type MatchingConfig = {
+  reference_competitor: string;
+  configured: boolean;
+  engine_version: string;
+  thresholds: Record<string, number>;
+  weights: Record<string, Record<string, number>>;
+  embedding: Record<string, unknown>;
+  config: Record<string, unknown>;
+};
+
+export type RerunResult = {
+  jobs: Job[];
+  refused: { competitor_key: string; code: string; message: string }[];
+  nothing_to_do: string[];
 };
 
 export type Notification = {

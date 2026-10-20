@@ -6,16 +6,20 @@ import type { ActionResult } from "@/lib/action-result";
 
 type Props<T> = {
   // Server action that takes one serializable input object.
-  action: (input: T) => Promise<ActionResult>;
+  action: (input: T) => Promise<ActionResult<unknown>>;
   input: T;
   label: string;
   pendingLabel?: string;
   confirmMessage?: string;
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
+  // Shown as a tooltip, e.g. why the button is disabled.
+  title?: string;
   className?: string;
   // Navigate here after success instead of refreshing (e.g. after deleting the current item).
   redirectTo?: string;
+  // Navigate to what the action created (e.g. the new job) when it reports one.
+  followResult?: boolean;
 };
 
 const VARIANTS = {
@@ -32,8 +36,10 @@ export function ActionButton<T>({
   confirmMessage,
   variant = "secondary",
   disabled,
+  title,
   className = "",
   redirectTo,
+  followResult,
 }: Props<T>) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -48,8 +54,9 @@ export function ActionButton<T>({
         setError(result.message);
         return;
       }
-      if (redirectTo) {
-        router.push(redirectTo);
+      const target = (followResult && result.redirectTo) || redirectTo;
+      if (target) {
+        router.push(target);
       } else {
         router.refresh();
       }
@@ -62,6 +69,7 @@ export function ActionButton<T>({
         type="button"
         onClick={run}
         disabled={disabled || pending}
+        title={title}
         className={`inline-flex h-9 items-center justify-center rounded-md px-3.5 text-sm font-medium shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
       >
         {pending ? (pendingLabel ?? "Working…") : label}

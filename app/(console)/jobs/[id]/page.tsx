@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { deleteJob, jobControl } from "@/app/actions";
+import { deleteJob, jobControl, restartJob } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { isActiveJob, JobProgress } from "@/components/job-progress";
+import { EstimateSummary, isActiveJob, isRestartableJob, JobOrigin, JobProgress } from "@/components/job-progress";
 import { ApiUnavailable, Card, DefinitionList, PageHeader, StatusBadge } from "@/components/ui";
 import { apiFetch, isApiError } from "@/lib/api";
 import { formatDateTime, formatDuration, labelize } from "@/lib/format";
@@ -47,7 +47,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <PageHeader
         title={`${labelize(job.task)} · ${job.competitor_key}`}
-        description={`Job #${job.id} · requested by ${job.requested_by} · created ${formatDateTime(job.created_at)}`}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>
+              Job #{job.id} · requested by {job.requested_by} · created {formatDateTime(job.created_at)}
+            </span>
+            <JobOrigin job={job} />
+          </span>
+        }
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <AutoRefresh enabled={active} />
@@ -66,7 +73,20 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 variant="danger"
                 confirmMessage="Cancel this job? Progress already saved is kept."
               />
-            ) : (
+            ) : null}
+            {isRestartableJob(job) ? (
+              <ActionButton
+                action={restartJob}
+                input={{ id: job.id }}
+                label="Restart"
+                pendingLabel="Restarting…"
+                variant="primary"
+                title="Create a new job that continues this one, skipping the work already done"
+                confirmMessage="Restart this job? A new job continues it and skips the work already done."
+                followResult
+              />
+            ) : null}
+            {active ? null : (
               <ActionButton
                 action={deleteJob}
                 input={{ id: job.id }}
@@ -128,11 +148,43 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                     "—"
                   ),
                 },
-                { label: "Competitor", value: job.competitor_key },
-                { label: "Estimate", value: job.estimate ? `${formatDuration(job.estimate.seconds)} · ${job.estimate.credits ?? "?"} credits` : "—" },
+                {
+                  label: "Continues job",
+                  value: job.resumed_from_job_id ? (
+                    <Link href={`/jobs/${job.resumed_from_job_id}`} className="text-indigo-600 hover:text-indigo-500">
+                      Job #{job.resumed_from_job_id}
+                    </Link>
+                  ) : (
+                    "—"
+                  ),
+                },
+                {
+                  label: "Competitor",
+                  value: (
+                    <Link href={`/competitors/${job.competitor_key}`} className="text-indigo-600 hover:text-indigo-500">
+                      {job.competitor_key}
+                    </Link>
+                  ),
+                },
               ]}
             />
+            {job.task === "matching" ? (
+              <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                <Link href={`/matching/review?competitor=${job.competitor_key}`} className="font-medium text-indigo-600 hover:text-indigo-500">
+                  Review queue →
+                </Link>
+                <Link href={`/matching/history?job_id=${job.id}`} className="font-medium text-indigo-600 hover:text-indigo-500">
+                  Events of this run →
+                </Link>
+              </div>
+            ) : null}
           </Card>
+
+          {job.estimate ? (
+            <Card title="Initial estimate">
+              <EstimateSummary estimate={job.estimate} />
+            </Card>
+          ) : null}
 
           <Card title="Options">
             <pre className="max-h-72 overflow-auto rounded-lg bg-slate-50 p-3 text-xs text-slate-700">{JSON.stringify(job.options ?? {}, null, 2)}</pre>

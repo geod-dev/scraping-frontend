@@ -158,7 +158,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                             </Link>
                           </Td>
                           <Td>
-                            <code className="text-xs text-slate-600">{p.catalog_reference ?? p.antalis_reference ?? p.external_id ?? "—"}</code>
+                            <code className="text-xs text-slate-600">{p.catalog_reference ?? p.external_id ?? "—"}</code>
                           </Td>
                           <Td>{p.brand ?? "—"}</Td>
                           <Td>

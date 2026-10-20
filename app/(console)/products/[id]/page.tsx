@@ -1,10 +1,30 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DecisionReasons, MatchStatusBadge, ProductCell, ScoreGauge } from "@/components/matching";
 import { PriceChart, type PricePoint } from "@/components/price-chart";
 import { ApiUnavailable, Badge, Card, DefinitionList, EmptyState, PageHeader, StatusBadge, Table, Td, Th } from "@/components/ui";
-import { apiFetch, isApiError } from "@/lib/api";
+import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatNumber, formatPrice, formatRelative, labelize } from "@/lib/format";
-import type { Observation, ProductDetail } from "@/lib/types";
+import type { Competitor, MatchListItem, MatchingConfig, Observation, Paginated, PriceSummary, ProductDetail } from "@/lib/types";
+
+const ASSOCIATED_LIMIT = 20;
+
+function PriceLine({ price }: { price: PriceSummary | null | undefined }) {
+  if (!price) return <span className="text-slate-400">—</span>;
+  return (
+    <span className="whitespace-nowrap">
+      <span className="font-medium text-slate-900">{formatPrice(price.from_price, price.currency)}</span>
+      {price.price_unit ? (
+        <span className="text-xs text-slate-500">
+          {" "}
+          / {price.price_unit_quantity && price.price_unit_quantity !== "1" ? `${price.price_unit_quantity} ` : ""}
+          {price.price_unit}
+        </span>
+      ) : null}
+      {price.tiers > 1 ? <span className="text-xs text-slate-500"> · {price.tiers} tiers</span> : null}
+    </span>
+  );
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -75,6 +95,33 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
     historyError = isApiError(error) ? error.message : "Price history is unavailable.";
   }
 
+  // Matching: a competitor product has a `matching` summary; a reference (Antalis) product
+  // lists the competitor products associated with or proposing it (price comparison).
+  const [config, competitors] = await Promise.all([
+    settle(apiFetch<MatchingConfig>("/matching/config")),
+    settle(apiFetch<Competitor[]>("/competitors")),
+  ]);
+  const referenceId = competitors.data?.find((c) => c.key === config.data?.reference_competitor)?.id;
+  const isReference = referenceId !== undefined && product.competitor_id === referenceId;
+  const matchedId = product.matching ? (product.matching.antalis_product_id ?? product.matching.proposed_antalis_product_id) : null;
+
+  const [antalisProduct, associated] = await Promise.all([
+    matchedId ? settle(apiFetch<ProductDetail>(`/products/${matchedId}`)) : Promise.resolve(null),
+    isReference
+      ? settle(
+          apiFetch<Paginated<MatchListItem>>("/matching/matches", {
+            query: { antalis_product_id: product.id, sort: "score", order: "desc", limit: ASSOCIATED_LIMIT },
+          }),
+        )
+      : Promise.resolve(null),
+  ]);
+  // Latest prices of the associated competitor products, for the comparison table.
+  const associatedPrices = new Map<number, PriceSummary | null>();
+  if (associated?.data) {
+    const details = await Promise.all(associated.data.items.map((m) => settle(apiFetch<ProductDetail>(`/products/${m.product.id}`))));
+    associated.data.items.forEach((m, i) => associatedPrices.set(m.product.id, details[i].data?.latest_price ?? null));
+  }
+
   const currency = product.latest_price?.currency ?? product.latest_prices[0]?.currency ?? "EUR";
   const chartPoints = toChartPoints(history);
   const images = (product.images ?? []).map(imageUrl).filter((u): u is string => Boolean(u));
@@ -108,9 +155,13 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           </span>
         }
         actions={
-          product.match_count > 0 ? (
-            <Link href={`/matches?product_id=${product.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-              {formatNumber(product.match_count)} match{product.match_count > 1 ? "es" : ""} →
+          product.matching ? (
+            <Link href={`/matching/products/${product.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+              Review matching →
+            </Link>
+          ) : isReference && product.match_count > 0 ? (
+            <Link href={`/matching/matches?antalis_product_id=${product.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+              {formatNumber(product.match_count)} associated competitor product{product.match_count > 1 ? "s" : ""} →
             </Link>
           ) : null
         }
@@ -118,6 +169,135 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
+          {product.matching ? (
+            <Card
+              title="Matching"
+              description="Equivalent product in the Antalis reference catalog"
+              actions={
+                <Link href={`/matching/products/${product.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                  Open review screen →
+                </Link>
+              }
+            >
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <MatchStatusBadge status={product.matching.status} />
+                  <ScoreGauge score={product.matching.score} />
+                </div>
+                {matchedId ? (
+                  antalisProduct?.data ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          {product.matching.antalis_product_id ? "Associated Antalis product" : "Proposed Antalis product"}
+                        </p>
+                        <div className="mt-1">
+                          <ProductCell
+                            product={{
+                              ...antalisProduct.data,
+                              competitor_key: config.data?.reference_competitor ?? "",
+                              category: antalisProduct.data.category_path.at(-1)?.name ?? null,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Prices</p>
+                        <dl className="mt-1 space-y-1 text-sm">
+                          <div className="flex justify-between gap-3">
+                            <dt className="text-slate-500">This product</dt>
+                            <dd>
+                              <PriceLine price={product.latest_price} />
+                            </dd>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <dt className="text-slate-500">Antalis</dt>
+                            <dd>
+                              <PriceLine price={antalisProduct.data.latest_price} />
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">Antalis product #{matchedId} could not be loaded.</p>
+                  )
+                ) : (
+                  <p className="text-sm text-slate-500">No Antalis product associated or proposed.</p>
+                )}
+              </div>
+            </Card>
+          ) : null}
+
+          {isReference ? (
+            <Card
+              title="Matched competitor products"
+              description="Competitor products associated with or proposing this Antalis product: compare their prices"
+              padded={false}
+              actions={
+                <Link href={`/matching/matches?antalis_product_id=${product.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                  All →
+                </Link>
+              }
+            >
+              {associated?.error ? (
+                <div className="p-5">
+                  <ApiUnavailable message={associated.error} />
+                </div>
+              ) : associated?.data && associated.data.items.length > 0 ? (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Competitor product</Th>
+                      <Th>Status</Th>
+                      <Th>Score</Th>
+                      <Th align="right">Latest price</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr className="bg-indigo-50/40">
+                      <Td>
+                        <span className="font-medium text-slate-900">This Antalis product</span>
+                      </Td>
+                      <Td />
+                      <Td />
+                      <Td align="right">
+                        <PriceLine price={product.latest_price} />
+                      </Td>
+                    </tr>
+                    {associated.data.items.map((m) => (
+                      <tr key={m.id} className="align-top hover:bg-slate-50">
+                        <Td>
+                          <ProductCell product={m.product} />
+                          <p className="mt-0.5 text-xs text-slate-400">{m.competitor_key}</p>
+                        </Td>
+                        <Td>
+                          <div className="space-y-1">
+                            <MatchStatusBadge status={m.status} manualChoice={m.manual_choice} />
+                            {!m.antalis_product ? <p className="text-xs text-slate-400">proposed only</p> : null}
+                            <DecisionReasons reasons={m.decision_reasons} compact />
+                          </div>
+                        </Td>
+                        <Td>
+                          <Link href={`/matching/products/${m.product.id}`}>
+                            <ScoreGauge score={m.score} />
+                          </Link>
+                        </Td>
+                        <Td align="right">
+                          <PriceLine price={associatedPrices.get(m.product.id)} />
+                        </Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              ) : (
+                <div className="p-5">
+                  <EmptyState title="No competitor product matched yet" />
+                </div>
+              )}
+            </Card>
+          ) : null}
+
           <Card title="Price history" description={chartPoints.length > 0 ? `${chartPoints.length} observation${chartPoints.length > 1 ? "s" : ""}` : undefined}>
             {historyError ? (
               <ApiUnavailable message={historyError} />
@@ -210,7 +390,6 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
               items={[
                 { label: "Latest price", value: product.latest_price ? formatPrice(product.latest_price.from_price, product.latest_price.currency) : "—" },
                 { label: "Reference", value: product.catalog_reference ? <code className="text-xs">{product.catalog_reference}</code> : "—" },
-                { label: "Antalis reference", value: product.antalis_reference ? <code className="text-xs">{product.antalis_reference}</code> : "—" },
                 { label: "External ID", value: product.external_id ? <code className="text-xs">{product.external_id}</code> : "—" },
                 { label: "First seen", value: formatDateTime(product.first_seen_at) },
                 { label: "Last seen", value: formatRelative(product.last_seen_at) },
