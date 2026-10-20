@@ -21,7 +21,7 @@ All data is fetched on the server. The API key never reaches the browser.
 | --- | --- | --- |
 | `SCRAPER_API_KEY` | yes | API key sent as `X-API-Key` to the scraper API. |
 | `SCRAPER_API_URL` | no | API base URL. Defaults to the production API under `/api/v1`. |
-| `DASHBOARD_PASSWORD` | no | If set, the whole dashboard requires HTTP Basic auth (any username). |
+| `DASHBOARD_PASSWORD` | no | If set, the dashboard requires signing in at `/login` with this password. |
 
 Copy `.env.example` to `.env.local` for local development.
 
@@ -48,9 +48,11 @@ The image uses Next's `standalone` output and runs as a non-root user on port 30
 
 ```
 app/            routes (Server Components), actions.ts (Server Actions)
+app/(console)/  dashboard pages with the sidebar layout
+app/login/      password login page and its server action
 components/     UI primitives and small client components
-lib/            server-only API client, types, formatters, search-param helpers
-proxy.ts        optional Basic auth gate (DASHBOARD_PASSWORD)
+lib/            server-only API client, types, formatters, search-param helpers, auth helpers
+proxy.ts        optional password gate (DASHBOARD_PASSWORD), redirects to /login
 docs/           OpenAPI spec snapshot of the scraper API
 ```
 

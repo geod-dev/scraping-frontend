@@ -14,7 +14,7 @@ const ITEMS = [
   { href: "/notifications", label: "Notifications", icon: "M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9zM13.7 21a2 2 0 01-3.4 0" },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ unreadNotifications = 0 }: { unreadNotifications?: number }) {
   const pathname = usePathname();
 
   return (
@@ -35,6 +35,12 @@ export function SidebarNav() {
               <path d={item.icon} strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             {item.label}
+            {item.href === "/notifications" && unreadNotifications > 0 ? (
+              <span className="ml-auto rounded-full bg-indigo-600 px-1.5 text-xs font-semibold leading-5 text-white">
+                {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                <span className="sr-only"> unread</span>
+              </span>
+            ) : null}
           </Link>
         );
       })}
