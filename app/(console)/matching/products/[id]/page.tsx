@@ -438,7 +438,7 @@ function Analysis({ analysis }: { analysis: ProductAnalysis }) {
         )}
       </div>
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Description used</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Description (characteristics only)</p>
         {analysis.description_used ? (
           <p className="mt-1 max-h-48 overflow-y-auto whitespace-pre-line text-slate-700">{analysis.description_used}</p>
         ) : (

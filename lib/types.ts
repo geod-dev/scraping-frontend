@@ -572,3 +572,21 @@ export type UnreadCount = {
   unread: number;
   by_level: Record<string, number>;
 };
+
+export type DimensionlessProduct = {
+  product_id: number;
+  catalog_reference: string | null;
+  title: string | null;
+  category: string | null;
+  url: string | null;
+  // Type read in the title, else the category name.
+  product_type: string | null;
+  // The title has numbers but no measure was read: likely a parsing gap.
+  title_has_numbers: boolean;
+  normalized_attributes: Record<string, unknown>;
+};
+
+export type DimensionlessPage = Paginated<DimensionlessProduct> & {
+  // All products without dimensions of the competitor (before filters), "unknown" = none detected.
+  by_product_type: Record<string, number>;
+};

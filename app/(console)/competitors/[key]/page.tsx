@@ -13,7 +13,7 @@ import type { CompetitorDetail, Estimate, MatchingSummary, TaskName } from "@/li
 
 const TASKS: { task: TaskName; label: string; description: string }[] = [
   { task: "catalog_sync", label: "Sync catalog", description: "Discover categories and products across the site." },
-  { task: "price_refresh", label: "Refresh prices", description: "Re-read prices for products already in the catalog." },
+  { task: "price_refresh", label: "Refresh prices", description: "Re-read prices and details of products already in the catalog, from their product pages." },
   { task: "matching", label: "Match with Antalis", description: "Associate each product with its Antalis equivalent. No web page is fetched." },
 ];
 
