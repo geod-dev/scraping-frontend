@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { FilterBar, FilterField, FilterGroup, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
-import { isActiveJob, JobOrigin } from "@/components/job-progress";
+import { isActiveJob, JobCategory, JobOrigin } from "@/components/job-progress";
 import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination, RowChevron, StatusBadge } from "@/components/kit";
 import { LinkRow } from "@/components/link-row";
 import { LiveRefresh } from "@/components/live";
@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { apiFetch, settle } from "@/lib/api";
 import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatDateTime, formatDuration, formatNumber, formatRelative, labelize } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
 import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
 import type { Competitor, Job, Paginated } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   ]);
 
   const names = new Map(competitors.data?.map((c) => [c.key, c.name]));
+  const categories = await jobCategoryNames(jobs.data?.items ?? []);
   const values = { competitor, task, status, active: active === undefined ? undefined : active ? "1" : "0" };
   const chips = filterChips("/jobs", values, [
     { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
@@ -95,7 +97,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                         <Link href={`/jobs/${job.id}`} className="font-medium hover:text-primary">
                           {labelize(job.task)} <span className="text-muted-foreground">#{job.id}</span>
                         </Link>
-                        <div className="mt-0.5">
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <JobCategory job={job} names={categories} />
                           <JobOrigin job={job} />
                         </div>
                       </TableCell>

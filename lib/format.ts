@@ -60,3 +60,21 @@ export function ageInDays(value: string | null | undefined): number | null {
   const time = new Date(value).getTime();
   return Number.isNaN(time) ? null : (Date.now() - time) / 86_400_000;
 }
+
+const DELETED_LABELS: [key: string, one: string, many: string][] = [
+  ["categories", "category", "categories"],
+  ["products", "product", "products"],
+  ["observations", "price observation", "price observations"],
+  ["matches", "match", "matches"],
+  ["matches_deprecated", "match of other competitors made obsolete", "matches of other competitors made obsolete"],
+];
+
+// What a category ban deleted, e.g. "3 categories · 120 products · 4,512 price observations"
+// (zero counts left out).
+export function formatDeleted(deleted: Record<string, unknown> | null | undefined): string {
+  const parts = DELETED_LABELS.flatMap(([key, one, many]) => {
+    const n = deleted?.[key];
+    return typeof n === "number" && n > 0 ? [`${formatNumber(n)} ${n === 1 ? one : many}`] : [];
+  });
+  return parts.length > 0 ? parts.join(" · ") : "nothing";
+}

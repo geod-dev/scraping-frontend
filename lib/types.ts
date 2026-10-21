@@ -38,6 +38,7 @@ export type TaskUnavailableReason =
   | "catalog_required"
   | "competitor_disabled"
   | "matching_reference"
+  | "matching_running"
   | "reference_missing"
   | "matching_not_configured"
   | "reference_catalog_required";
@@ -69,6 +70,8 @@ export type Stats = {
 
 export type CompetitorStats = {
   categories: number;
+  // Banned categories: deleted and skipped by every catalog sync.
+  banned_categories?: number;
   products_active: number;
   products_missing: number;
   observations: number;
@@ -201,6 +204,36 @@ export type CategoryDetail = Category & {
   product_count: number;
   subtree_product_count: number;
 };
+
+// A banned category: deleted with its subtree and skipped by the catalog syncs. `id` is the
+// ban id; `category_id` the id the category had (it gets a new one when unbanned).
+export type BannedCategory = {
+  id: number;
+  competitor_id: number;
+  competitor_key: string;
+  category_id: number;
+  name: string;
+  slug: string | null;
+  url: string;
+  external_id: string | null;
+  kind: string | null;
+  depth: number | null;
+  breadcrumb: unknown[] | null;
+  details: Record<string, unknown>;
+  parent_url: string | null;
+  // Current id of its parent category, if it still exists.
+  parent_category_id?: number | null;
+  first_seen_at: string | null;
+  reason: string | null;
+  banned_by: string | null;
+  banned_at: string;
+  // What the ban deleted; matches_deprecated = matches of other competitors that pointed to a
+  // deleted reference product.
+  deleted: Partial<Record<"categories" | "products" | "observations" | "matches" | "matches_deprecated", number>>;
+};
+
+// The recreated category (empty, new id) and the catalog sync queued with `scrape: true`.
+export type UnbanResult = { category: Category; job: Job | null };
 
 export type CategoryTreeNode = {
   id: number;

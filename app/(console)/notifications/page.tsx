@@ -33,6 +33,8 @@ const KINDS = [
   "page_errors",
   "matching_summary",
   "matches_deprecated",
+  "category_banned",
+  "category_unbanned",
 ] as const;
 
 const LEVEL_DOTS: Record<string, string> = { info: "bg-sky-500", success: "bg-emerald-500", warning: "bg-amber-500", error: "bg-rose-500" };

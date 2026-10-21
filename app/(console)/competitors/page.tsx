@@ -6,7 +6,9 @@ import { LiveJobBar } from "@/components/live-job";
 import { StatusDistribution } from "@/components/matching";
 import { Card } from "@/components/ui/card";
 import { apiFetch, settle } from "@/lib/api";
-import { formatNumber, formatRelative, labelize } from "@/lib/format";
+import { formatNumber, formatRelative } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
+import { jobTitle } from "@/lib/tasks";
 import type { Competitor, MatchingSummary } from "@/lib/types";
 
 export const metadata = { title: "Competitors" };
@@ -14,6 +16,7 @@ export const metadata = { title: "Competitors" };
 export default async function CompetitorsPage() {
   const [result, matching] = await Promise.all([settle(apiFetch<Competitor[]>("/competitors")), settle(apiFetch<MatchingSummary[]>("/matching/summary"))]);
   const summaries = new Map(matching.data?.map((s) => [s.competitor_key, s]));
+  const categories = await jobCategoryNames(result.data?.map((c) => c.worker.job) ?? []);
 
   return (
     <>
@@ -42,12 +45,17 @@ export default async function CompetitorsPage() {
                         <div className="flex shrink-0 flex-col items-end gap-1">
                           <StatusBadge status={c.worker.state} />
                           {c.enabled ? null : <ToneBadge tone="warning">Disabled</ToneBadge>}
+                          {c.stats.banned_categories ? (
+                            <ToneBadge tone="danger">
+                              {formatNumber(c.stats.banned_categories)} banned {c.stats.banned_categories === 1 ? "category" : "categories"}
+                            </ToneBadge>
+                          ) : null}
                         </div>
                       </div>
 
                       {job ? (
                         <div className="rounded-lg bg-sky-50/70 p-3 ring-1 ring-sky-100">
-                          <LiveJobBar job={job} title={labelize(job.task)} />
+                          <LiveJobBar job={job} title={jobTitle(job, categories)} />
                         </div>
                       ) : null}
 

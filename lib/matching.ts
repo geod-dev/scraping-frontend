@@ -85,6 +85,7 @@ export const TASK_UNAVAILABLE_LABELS: Record<TaskUnavailableReason, string> = {
   catalog_required: "Run a full catalog sync of this competitor first",
   competitor_disabled: "This competitor is disabled",
   matching_reference: "Antalis is the reference catalog: it is not matched",
+  matching_running: "A matching job is running",
   reference_catalog_required: "The Antalis catalog has not been fully synced yet",
   reference_missing: "The Antalis catalog is not in the database",
   matching_not_configured: "Matching is not configured on the server (no Voyage API key)",

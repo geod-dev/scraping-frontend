@@ -1,17 +1,19 @@
 import Link from "next/link";
-import { isActiveJob } from "@/components/job-progress";
+import { isActiveJob, JobCategory } from "@/components/job-progress";
 import { ApiUnavailable, EmptyState, Notice, PageHeader, Panel, StatusBadge, ToneBadge } from "@/components/kit";
 import { LiveRefresh } from "@/components/live";
 import { LiveJobBar } from "@/components/live-job";
 import { StatusDistribution } from "@/components/matching";
 import { MatchingTabs } from "@/components/matching-tabs";
 import { RerunDeprecatedButton } from "@/components/rerun-deprecated-button";
-import { StartTaskForm } from "@/components/start-task-form";
+import { StartTaskButton } from "@/components/task-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiFetch, settle } from "@/lib/api";
 import { formatNumber, formatRelative, labelize } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
+import { jobTitle, type CategoryNames } from "@/lib/tasks";
 import { TASK_UNAVAILABLE_LABELS } from "@/lib/matching";
 import { buildQuery } from "@/lib/params";
 import type { MatchingConfig, MatchingSummary } from "@/lib/types";
@@ -23,6 +25,7 @@ export default async function MatchingOverviewPage() {
 
   const toReview = summary.data?.reduce((sum, s) => sum + s.needs_review, 0) ?? 0;
   const deprecated = summary.data?.reduce((sum, s) => sum + s.deprecated, 0) ?? 0;
+  const categories = await jobCategoryNames(summary.data?.flatMap((s) => [s.job, s.last_job]) ?? []);
 
   return (
     <>
@@ -57,7 +60,7 @@ export default async function MatchingOverviewPage() {
         ) : (
           <div className="space-y-4">
             {summary.data.map((s) => (
-              <CompetitorMatching key={s.competitor_key} summary={s} />
+              <CompetitorMatching key={s.competitor_key} summary={s} categories={categories} />
             ))}
           </div>
         )
@@ -68,7 +71,7 @@ export default async function MatchingOverviewPage() {
   );
 }
 
-function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
+function CompetitorMatching({ summary: s, categories }: { summary: MatchingSummary; categories: CategoryNames }) {
   const job = s.job && isActiveJob(s.job) ? s.job : null;
   // Nothing matched yet: the run embeds every product text.
   const firstRun = s.eligible_products > 0 && s.never_matched >= s.eligible_products;
@@ -123,7 +126,7 @@ function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
         <div className="min-w-0 flex-1 text-sm">
           {job ? (
             <Link href={`/jobs/${job.id}`} className="block max-w-md">
-              <LiveJobBar job={job} title={`Matching run #${job.id}`} />
+              <LiveJobBar job={job} title={`${jobTitle(job, categories)} #${job.id}`} />
             </Link>
           ) : s.last_job ? (
             <p className="flex flex-wrap items-center gap-2 text-muted-foreground">
@@ -134,6 +137,7 @@ function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
               <StatusBadge status={s.last_job.status} />
               {formatRelative(s.last_job.finished_at)}
               {s.last_job.options?.mode ? <ToneBadge>{labelize(String(s.last_job.options.mode))}</ToneBadge> : null}
+              <JobCategory job={s.last_job} names={categories} />
             </p>
           ) : (
             <p className="text-muted-foreground">No matching run yet.</p>
@@ -141,11 +145,11 @@ function CompetitorMatching({ summary: s }: { summary: MatchingSummary }) {
           {reason ? <p className="mt-1 text-xs font-medium text-amber-700">Unavailable: {reason}</p> : null}
           {firstRun ? <p className="mt-1 text-xs text-amber-700">The first run embeds the whole catalog: allow a few minutes.</p> : null}
         </div>
-        <StartTaskForm
+        <StartTaskButton
           competitorKey={s.competitor_key}
           competitorName={s.competitor_name}
           task="matching"
-          label="Run matching"
+          label="Run matching…"
           disabled={!s.availability.allowed || Boolean(job)}
           disabledReason={reason ?? (job ? "A matching run is in progress" : null)}
           firstMatchingRun={firstRun}

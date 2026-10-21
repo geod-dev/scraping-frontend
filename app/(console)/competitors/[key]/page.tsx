@@ -3,17 +3,18 @@ import { notFound } from "next/navigation";
 import { DatabaseZapIcon, ExternalLinkIcon, GitCompareArrowsIcon, PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, TagIcon, type LucideIcon } from "lucide-react";
 import { restartJob, workerControl } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
-import { EstimateLine, isActiveJob, isRestartableJob, JobOrigin } from "@/components/job-progress";
+import { EstimateLine, isActiveJob, isRestartableJob, JobCategory, JobOrigin } from "@/components/job-progress";
 import { ApiUnavailable, DefinitionList, PageHeader, Panel, PanelLink, StatCard, StatusBadge, ToneBadge } from "@/components/kit";
 import { LiveRefresh } from "@/components/live";
 import { LiveJobProgress } from "@/components/live-job";
 import { StatusDistribution } from "@/components/matching";
-import { StartTaskForm } from "@/components/start-task-form";
+import { StartTaskButton } from "@/components/task-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatDuration, formatNumber, formatRelative, labelize } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
 import { TASK_UNAVAILABLE_LABELS } from "@/lib/matching";
 import { buildQuery } from "@/lib/params";
 import type { CompetitorDetail, MatchingSummary, TaskName } from "@/lib/types";
@@ -52,7 +53,10 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
   // The reference catalog itself is never matched.
   const isReference = worker.tasks?.matching?.reason === "matching_reference";
   const tasks = TASKS.filter((t) => !(t.task === "matching" && isReference));
-  const matching = isReference ? null : await settle(apiFetch<MatchingSummary[]>("/matching/summary", { query: { competitor: competitor.key } }));
+  const [matching, categories] = await Promise.all([
+    isReference ? null : settle(apiFetch<MatchingSummary[]>("/matching/summary", { query: { competitor: competitor.key } })),
+    jobCategoryNames([job, lastJob]),
+  ]);
   const summary = matching?.data?.[0] ?? null;
   const firstMatchingRun = summary ? summary.eligible_products > 0 && summary.never_matched >= summary.eligible_products : undefined;
 
@@ -102,7 +106,12 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
           hint={`${formatNumber(competitor.stats.products_missing)} missing`}
           href={`/products?competitor=${competitor.key}`}
         />
-        <StatCard label="Categories" value={formatNumber(competitor.stats.categories)} href={`/categories?competitor=${competitor.key}`} />
+        <StatCard
+          label="Categories"
+          value={formatNumber(competitor.stats.categories)}
+          hint={competitor.stats.banned_categories ? `${formatNumber(competitor.stats.banned_categories)} banned` : undefined}
+          href={`/categories?competitor=${competitor.key}`}
+        />
         <StatCard label="Price observations" value={formatNumber(competitor.stats.observations)} />
         <StatCard label="Last price seen" value={formatRelative(competitor.stats.last_price_observed_at)} />
       </section>
@@ -114,6 +123,7 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
           description={
             <span className="inline-flex flex-wrap items-center gap-2">
               Job #{job.id} · started by {job.requested_by}
+              <JobCategory job={job} names={categories} />
               <JobOrigin job={job} />
             </span>
           }
@@ -152,6 +162,7 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
               description={
                 <span className="inline-flex flex-wrap items-center gap-2">
                   #{lastJob.id} · {labelize(lastJob.task)} · requested by {lastJob.requested_by}
+                  <JobCategory job={lastJob} names={categories} />
                   <JobOrigin job={lastJob} />
                 </span>
               }
@@ -211,11 +222,12 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
                       {task === "matching" && firstMatchingRun ? <p className="text-xs text-amber-700">The first run embeds the whole catalog and can take a few minutes.</p> : null}
                     </div>
                   </div>
-                  <StartTaskForm
+                  <StartTaskButton
                     competitorKey={competitor.key}
                     competitorName={competitor.name}
                     task={task}
-                    label={label}
+                    label={`${label}…`}
+                    icon={<Icon />}
                     disabled={!allowed || state !== "idle"}
                     disabledReason={reason ?? (state !== "idle" ? "The worker is busy with another job" : null)}
                     firstMatchingRun={task === "matching" ? firstMatchingRun : undefined}

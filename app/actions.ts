@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { apiFetch, isApiError } from "@/lib/api";
 import type { ActionResult } from "@/lib/action-result";
-import type { Job, MatchingMode, RerunResult, TaskName } from "@/lib/types";
+import { categoryOptions, type CategoryOption } from "@/lib/categories";
+import type { TaskOptions } from "@/lib/tasks";
+import type { BannedCategory, Estimate, Job, MatchingMode, RerunResult, TaskName, UnbanResult } from "@/lib/types";
 
 // Server actions run on the server only. Each one validates its input, calls the
 // scraper API with the server-side key, and returns a result the UI can display.
@@ -30,35 +32,112 @@ async function run<T, R = undefined>(
     revalidatePath("/", "layout");
     return { ok: true, ...after?.(data) };
   } catch (error) {
-    if (isApiError(error)) return { ok: false, message: error.message };
-    return { ok: false, message: "Something went wrong. Please try again." };
+    return failure(error);
   }
+}
+
+// The API message, and the job that blocks the request when the API names one (worker_busy...).
+function failure(error: unknown): { ok: false; message: string; jobId?: number } {
+  if (!isApiError(error)) return { ok: false, message: "Something went wrong. Please try again." };
+  const jobId = error.details.job_id;
+  return { ok: false, message: error.message, jobId: isPositiveInt(jobId) ? jobId : undefined };
 }
 
 const toJob = (job: Job) => ({ redirectTo: `/jobs/${job.id}` });
 
-export async function startWorker(input: {
-  key: string;
-  task: TaskName;
-  mode?: MatchingMode;
-  retryFailedRunId?: number;
-}): Promise<ActionResult> {
-  if (!KEY_PATTERN.test(input.key)) return { ok: false, message: "Invalid competitor key." };
-  let options: Record<string, unknown> = {};
-  if (input.task === "matching") {
-    if (input.mode && !MODES.includes(input.mode)) return { ok: false, message: "Unknown matching mode." };
-    options = { mode: input.mode ?? "incremental" };
-  } else if (input.task === "catalog_sync") {
-    if (input.retryFailedRunId !== undefined) {
-      if (!isPositiveInt(input.retryFailedRunId)) return { ok: false, message: "Invalid run id." };
-      options = { retry_failed_run_id: input.retryFailedRunId };
-    }
-  } else if (input.task !== "price_refresh") {
-    return { ok: false, message: "Unknown task." };
+const isCount = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
+const isHours = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 24 * 365;
+
+// The API options of a task from the dialog's options, or why they are invalid. Only the
+// options of the task are kept; a category and a run to retry exclude each other.
+function taskOptions(task: TaskName, o: TaskOptions): { options: Record<string, unknown> } | { error: string } {
+  if (o.categoryId !== undefined && !isPositiveInt(o.categoryId)) return { error: "Invalid category." };
+  if (o.retryFailedRunId !== undefined && !isPositiveInt(o.retryFailedRunId)) return { error: "Invalid run id." };
+  if (o.categoryId !== undefined && o.retryFailedRunId !== undefined) return { error: "Choose either a category or a run to retry." };
+  if (task === "catalog_sync") {
+    if (o.maxProducts !== undefined && !isCount(o.maxProducts)) return { error: "Invalid number of products." };
+    if (o.resumeWithinHours !== undefined && !isHours(o.resumeWithinHours)) return { error: "Invalid number of hours." };
+    return {
+      options: {
+        category_id: o.categoryId,
+        retry_failed_run_id: o.retryFailedRunId,
+        max_products: o.maxProducts,
+        skip_products: o.skipProducts === true ? true : undefined,
+        resume_within_hours: o.resumeWithinHours,
+      },
+    };
   }
+  if (task === "price_refresh") {
+    if (o.limit !== undefined && !isPositiveInt(o.limit)) return { error: "Invalid number of products." };
+    if (o.skipFreshHours !== undefined && !isHours(o.skipFreshHours)) return { error: "Invalid number of hours." };
+    return {
+      options: {
+        category: o.categoryId !== undefined ? String(o.categoryId) : undefined,
+        retry_failed_run_id: o.retryFailedRunId,
+        skip_fresh_hours: o.skipFreshHours,
+        include_missing: o.includeMissing === true ? true : undefined,
+        update_details: o.updateDetails === false ? false : undefined,
+        limit: o.limit,
+      },
+    };
+  }
+  if (task === "matching") {
+    if (o.mode && !MODES.includes(o.mode)) return { error: "Unknown matching mode." };
+    if (o.retryFailedRunId !== undefined) return { error: "A matching run has no failed pages to retry." };
+    return { options: { mode: o.mode ?? "incremental", reembed: o.reembed === true ? true : undefined, category_id: o.categoryId } };
+  }
+  return { error: "Unknown task." };
+}
+
+export async function startWorker(input: { key: string; task: TaskName; options?: TaskOptions }): Promise<ActionResult> {
+  if (!KEY_PATTERN.test(input.key)) return { ok: false, message: "Invalid competitor key." };
+  const built = taskOptions(input.task, input.options ?? {});
+  if ("error" in built) return { ok: false, message: built.error };
   return run(
-    () => apiFetch<Job>(`/competitors/${input.key}/worker/start`, { method: "POST", body: { task: input.task, options } }),
+    () => apiFetch<Job>(`/competitors/${input.key}/worker/start`, { method: "POST", body: { task: input.task, options: built.options } }),
     toJob,
+  );
+}
+
+// What a job with these options would cost, without starting it.
+export async function estimateTask(input: { key: string; task: TaskName; options?: TaskOptions }): Promise<ActionResult<Estimate>> {
+  if (!KEY_PATTERN.test(input.key)) return { ok: false, message: "Invalid competitor key." };
+  const built = taskOptions(input.task, input.options ?? {});
+  if ("error" in built) return { ok: false, message: built.error };
+  try {
+    const estimate = await apiFetch<Estimate>(`/competitors/${input.key}/worker/estimate`, { method: "POST", body: { task: input.task, options: built.options } });
+    return { ok: true, data: estimate };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+// The category tree of a competitor as picker options, loaded when a job dialog opens.
+export async function loadCategoryOptions(input: { key: string }): Promise<ActionResult<CategoryOption[]>> {
+  if (!KEY_PATTERN.test(input.key)) return { ok: false, message: "Invalid competitor key." };
+  return { ok: true, data: await categoryOptions(input.key) };
+}
+
+// Deletes the category with its whole subtree; every later catalog sync skips it.
+export async function banCategory(input: { id: number; reason?: string; bannedBy?: string }): Promise<ActionResult<BannedCategory>> {
+  if (!isPositiveInt(input.id)) return { ok: false, message: "Invalid category id." };
+  return run(
+    () => apiFetch<BannedCategory>(`/categories/${input.id}/ban`, { method: "POST", body: { reason: note(input.reason), banned_by: note(input.bannedBy, 100) } }),
+    (data) => ({ data }),
+  );
+}
+
+// Recreates the category, empty and under a new id; `scrape` also queues its catalog sync
+// (if that is refused, nothing is unbanned).
+export async function unbanCategory(input: { banId: number; scrape: boolean; unbannedBy?: string }): Promise<ActionResult<UnbanResult>> {
+  if (!isPositiveInt(input.banId)) return { ok: false, message: "Invalid ban id." };
+  return run(
+    () =>
+      apiFetch<UnbanResult>(`/categories/banned/${input.banId}/unban`, {
+        method: "POST",
+        body: { scrape: input.scrape === true, unbanned_by: note(input.unbannedBy, 100) },
+      }),
+    (data) => ({ data }),
   );
 }
 

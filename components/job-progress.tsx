@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Notice, ProgressBar, StatusBadge, ToneBadge } from "@/components/kit";
 import { formatDateTime, formatDuration, formatNumber, labelize } from "@/lib/format";
+import { jobCategoryId, type CategoryNames } from "@/lib/tasks";
 import type { Estimate, Job } from "@/lib/types";
 
 const ACTIVE = new Set(["queued", "running", "paused"]);
@@ -36,6 +37,24 @@ export function JobOrigin({ job }: { job: Pick<Job, "requested_by" | "resumed_fr
         </Link>
       ) : null}
     </span>
+  );
+}
+
+// "category: Name" badge of a job limited to a category, linking to it while it exists.
+export function JobCategory({ job, names }: { job: Pick<Job, "options">; names: CategoryNames }) {
+  const id = jobCategoryId(job);
+  if (id === null) return null;
+  const name = names.get(id);
+  return (
+    <ToneBadge tone="violet" className="max-w-64">
+      {name ? (
+        <Link href={`/categories/${id}`} className="truncate hover:underline" title={name}>
+          category: {name}
+        </Link>
+      ) : (
+        <span title="This category no longer exists (banned or deleted)">category: #{id}</span>
+      )}
+    </ToneBadge>
   );
 }
 

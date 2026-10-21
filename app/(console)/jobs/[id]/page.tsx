@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import { PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, Trash2Icon } from "lucide-react";
 import { deleteJob, jobControl, restartJob } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
-import { EstimateLine, isActiveJob, isRestartableJob, JobOrigin } from "@/components/job-progress";
+import { EstimateLine, isActiveJob, isRestartableJob, JobCategory, JobOrigin } from "@/components/job-progress";
 import { ApiUnavailable, DefinitionList, KeyValueList, Notice, PageHeader, Panel, PanelLink, StatusBadge } from "@/components/kit";
 import { LiveRefresh } from "@/components/live";
 import { LiveJobProgress } from "@/components/live-job";
 import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatDuration, labelize } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
 import type { Competitor, Job } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +34,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     );
   }
 
-  const competitors = await settle(apiFetch<Competitor[]>("/competitors"));
+  const [competitors, categories] = await Promise.all([settle(apiFetch<Competitor[]>("/competitors")), jobCategoryNames([job])]);
   const competitorName = competitors.data?.find((c) => c.key === job.competitor_key)?.name ?? job.competitor_key;
   const active = isActiveJob(job);
   const canPause = job.status === "running" || job.status === "queued";
@@ -49,6 +50,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           <span className="inline-flex flex-wrap items-center gap-2">
             <StatusBadge status={job.status} />
             Job #{job.id} · requested by {job.requested_by} · created {formatDateTime(job.created_at)}
+            <JobCategory job={job} names={categories} />
             <JobOrigin job={job} />
           </span>
         }

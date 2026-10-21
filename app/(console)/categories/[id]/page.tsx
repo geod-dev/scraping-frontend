@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ExternalLinkIcon } from "lucide-react";
+import { DatabaseZapIcon, ExternalLinkIcon, GitCompareArrowsIcon, TagIcon } from "lucide-react";
+import { BanCategoryButton, type CategoryTarget } from "@/components/category-actions";
 import { ApiUnavailable, DefinitionList, EmptyState, KeyValueList, PageHeader, Panel, PanelLink, StatCard, StatusBadge, ToneBadge } from "@/components/kit";
+import { LiveRefresh } from "@/components/live";
 import { ProductCard } from "@/components/product-card";
-import { buttonVariants } from "@/components/ui/button";
+import { StartTaskButton } from "@/components/task-dialog";
 import { apiFetch, isApiError, settle } from "@/lib/api";
 import { formatDateTime, formatNumber, labelize } from "@/lib/format";
 import type { Category, CategoryDetail, Competitor, Paginated, ProductListItem } from "@/lib/types";
@@ -37,12 +39,26 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
     settle(apiFetch<Paginated<ProductListItem>>("/products", { query: { category_id: categoryId, include_subcategories: true, limit: 12 } })),
   ]);
   const competitor = competitors.data?.find((c) => c.id === category.competitor_id);
+  const parent = category.path.length > 1 ? category.path[category.path.length - 2] : null;
+  const treeHref = competitor ? `/categories?competitor=${encodeURIComponent(competitor.key)}` : "/categories";
+  const target: CategoryTarget | null = competitor
+    ? {
+        id: category.id,
+        name: category.name,
+        competitorKey: competitor.key,
+        competitorName: competitor.name,
+        isReference: competitor.worker.tasks?.matching?.reason === "matching_reference",
+      }
+    : null;
+  const busyReason = competitor && competitor.worker.state !== "idle" ? "The worker of this competitor is busy with another job" : null;
+  const jobProps = target ? { competitorKey: target.competitorKey, competitorName: target.competitorName, category: { id: category.id, name: category.name } } : null;
 
   return (
     <>
+      {competitor ? <LiveRefresh on={["job.status", "competitor.updated"]} competitor={competitor.key} /> : null}
       <PageHeader
         breadcrumbs={[
-          { label: competitor ? `Categories · ${competitor.name}` : "Categories", href: competitor ? `/categories?competitor=${encodeURIComponent(competitor.key)}` : "/categories" },
+          { label: competitor ? `Categories · ${competitor.name}` : "Categories", href: treeHref },
           ...category.path.filter((c) => c.id !== category.id).map((c) => ({ label: c.name, href: `/categories/${c.id}` })),
         ]}
         title={category.name}
@@ -50,18 +66,27 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
           <span className="inline-flex flex-wrap items-center gap-2">
             {category.kind ? <ToneBadge tone="violet">{labelize(category.kind)}</ToneBadge> : null}
             <StatusBadge status={category.status} />
+            <a href={category.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80">
+              Open on the site
+              <ExternalLinkIcon className="size-3.5" />
+            </a>
           </span>
         }
         actions={
-          <>
-            <a href={category.url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "lg" })}>
-              <ExternalLinkIcon />
-              Open on the site
-            </a>
-            <Link href={`/products?category_id=${category.id}`} className={buttonVariants({ size: "lg" })}>
-              Browse {formatNumber(category.subtree_product_count)} products
-            </Link>
-          </>
+          target && jobProps ? (
+            <>
+              <StartTaskButton {...jobProps} task="catalog_sync" label="Scrape this category…" icon={<DatabaseZapIcon />} disabled={Boolean(busyReason)} disabledReason={busyReason} />
+              <StartTaskButton {...jobProps} task="price_refresh" label="Refresh prices…" icon={<TagIcon />} variant="outline" disabled={Boolean(busyReason)} disabledReason={busyReason} />
+              {target.isReference ? null : (
+                <StartTaskButton {...jobProps} task="matching" label="Match this category…" icon={<GitCompareArrowsIcon />} variant="outline" disabled={Boolean(busyReason)} disabledReason={busyReason} />
+              )}
+              <BanCategoryButton
+                category={target}
+                impact={{ subcategories: category.children_count, direct: true, products: category.subtree_product_count }}
+                afterBanHref={parent ? `/categories/${parent.id}` : treeHref}
+              />
+            </>
+          ) : null
         }
       />
 

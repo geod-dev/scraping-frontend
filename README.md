@@ -6,9 +6,11 @@ Web dashboard for the competitor catalog scraping API
 It covers overview and health, competitors and their workers, products with price
 history, the category tree, jobs (live progress, pause/resume/cancel, restart of an
 interrupted/failed/cancelled job), runs and their items (retry of the failed pages),
-notifications, and the matching of competitor products with the Antalis reference catalog
-(`/matching`: per-competitor overview and runs, review queue, review screen with the score
-breakdown of every candidate, all matches, obsolete matches, event history).
+notifications, banned categories (deleted and skipped by the syncs, with unban), and the
+matching of competitor products with the Antalis reference catalog (`/matching`:
+per-competitor overview and runs, review queue, review screen with the score breakdown of
+every candidate, all matches, obsolete matches, event history). Jobs start from a dialog
+with their options and a live estimate, for a whole catalog or a single category.
 
 Matching scores are similarity scores on a 0-100 scale, not probabilities: never show them
 as a percentage.

@@ -337,6 +337,23 @@ export function Notice({ tone = "info", title, children }: { tone?: keyof typeof
   );
 }
 
+// A refused action, with a link to the job that blocks it when the API names one.
+export function ActionErrorNotice({ title, error }: { title: string; error: { message: string; jobId?: number } }) {
+  return (
+    <Notice tone="danger" title={title}>
+      {error.message}
+      {error.jobId ? (
+        <>
+          {" "}
+          <Link href={`/jobs/${error.jobId}`} className="font-medium underline underline-offset-2">
+            Open job #{error.jobId}
+          </Link>
+        </>
+      ) : null}
+    </Notice>
+  );
+}
+
 export function ApiUnavailable({ message }: { message: string }) {
   return (
     <Notice tone="danger" title="Could not load data">

@@ -9,12 +9,15 @@ const DEFAULT_BASE_URL =
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string | null;
+  // `error.details` of the API (e.g. `job_id`: the job that blocks a request).
+  readonly details: Record<string, unknown>;
 
-  constructor(status: number, message: string, code: string | null = null) {
+  constructor(status: number, message: string, code: string | null = null, details: Record<string, unknown> = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -31,7 +34,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   nothing_to_retry: "This run has no failed pages left to retry.",
 };
 
-type QueryValue =string | number | boolean | null | undefined | Array<string | number>;
+type QueryValue = string | number | boolean | null | undefined | Array<string | number>;
 
 export type ApiRequest = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -62,7 +65,9 @@ function buildQueryString(query: ApiRequest["query"]): string {
   return serialized ? `?${serialized}` : "";
 }
 
-function extractMessage(payload: unknown, fallback: string): { message: string; code: string | null } {
+type ErrorInfo = { message: string; code: string | null; details?: Record<string, unknown> };
+
+function extractMessage(payload: unknown, fallback: string): ErrorInfo {
   if (payload && typeof payload === "object") {
     const p = payload as Record<string, unknown>;
     if (p.error && typeof p.error === "object") {
@@ -70,6 +75,7 @@ function extractMessage(payload: unknown, fallback: string): { message: string; 
       return {
         message: typeof e.message === "string" ? e.message : fallback,
         code: typeof e.code === "string" ? e.code : null,
+        details: e.details && typeof e.details === "object" ? (e.details as Record<string, unknown>) : undefined,
       };
     }
     if (Array.isArray(p.detail)) {
@@ -119,8 +125,8 @@ export async function apiFetch<T>(path: string, request: ApiRequest = {}): Promi
   }
 
   if (!response.ok) {
-    const { message, code } = extractMessage(payload, `API request failed (${response.status}).`);
-    throw new ApiError(response.status, (code && ERROR_MESSAGES[code]) || message, code);
+    const { message, code, details } = extractMessage(payload, `API request failed (${response.status}).`);
+    throw new ApiError(response.status, (code && ERROR_MESSAGES[code]) || message, code, details);
   }
 
   return payload as T;

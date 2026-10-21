@@ -10,6 +10,8 @@ import { NotificationLinks } from "@/components/notification-links";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiFetch, settle } from "@/lib/api";
 import { ageInDays, formatNumber, formatRelative, labelize } from "@/lib/format";
+import { jobCategoryNames } from "@/lib/job-categories";
+import { jobTitle } from "@/lib/tasks";
 import { cn } from "@/lib/utils";
 import type { Competitor, Health, Job, JobStatus, MatchingSummary, Notification, OverviewStats, Paginated, PricePosition, Stats } from "@/lib/types";
 
@@ -34,6 +36,7 @@ export default async function OverviewPage() {
   const competitorNames = new Map(competitors.data?.map((c) => [c.key, c.name]));
   const summaries = new Map(matching.data?.map((s) => [s.competitor_key, s]));
   const activeJobs = active.data?.items ?? [];
+  const categories = await jobCategoryNames(activeJobs);
 
   // Matching coverage across competitors.
   const toReview = matching.data?.reduce((sum, s) => sum + s.needs_review, 0) ?? 0;
@@ -152,7 +155,7 @@ export default async function OverviewPage() {
             {activeJobs.map((job) => (
               <li key={job.id}>
                 <Link href={`/jobs/${job.id}`} className="block rounded-lg border p-3 transition hover:border-primary/40 hover:bg-muted/40">
-                  <LiveJobBar job={job} title={`${competitorNames.get(job.competitor_key) ?? job.competitor_key} · ${labelize(job.task)}`} />
+                  <LiveJobBar job={job} title={`${competitorNames.get(job.competitor_key) ?? job.competitor_key} · ${jobTitle(job, categories)}`} />
                 </Link>
               </li>
             ))}
