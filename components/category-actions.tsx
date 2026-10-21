@@ -32,8 +32,10 @@ export type CategoryTarget = {
   isReference: boolean;
 };
 
-// What a ban deletes. `direct`: `subcategories` counts the direct children only.
-export type BanImpact = { subcategories: number; direct: boolean; products: number };
+// What a ban deletes. `direct`: `subcategories` counts the direct children only. `products`:
+// the products the subtree owns (deleted); `listed`: the products it shows, listed ones included
+// (the listings go, the products filed in another category stay).
+export type BanImpact = { subcategories: number; direct: boolean; products: number; listed?: number };
 
 type Action = TaskName | "ban";
 
@@ -173,6 +175,7 @@ function BanDialog({
     });
   }
 
+  const listedElsewhere = Math.max(0, (impact.listed ?? 0) - impact.products);
   const subcategories =
     impact.subcategories === 0
       ? null
@@ -206,6 +209,11 @@ function BanDialog({
               </li>
               <li>Their matches and match history</li>
             </ul>
+            {listedElsewhere > 0 ? (
+              <p className="mt-2">
+                It also lists {plural(listedElsewhere, "product", "products")} filed in other categories: the listings go, those products stay.
+              </p>
+            ) : null}
           </Notice>
 
           {category.isReference ? (

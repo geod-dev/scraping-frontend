@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState, useTransition, type ReactNode, type TransitionStartFunction } from "react";
+import { createContext, Fragment, useContext, useState, useTransition, type ReactNode, type TransitionStartFunction } from "react";
 import Link from "next/link";
 import { ArrowDownWideNarrowIcon, ArrowUpNarrowWideIcon, ChevronsUpDownIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
 import { debounce, parseAsNativeArrayOf, parseAsString, useQueryStates } from "nuqs";
 import { cn } from "@/lib/utils";
+import { ExtraCategoryBadge } from "@/components/kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -192,12 +193,15 @@ export function FilterCombobox({
   label,
   anyLabel = "Any",
   searchPlaceholder = "Search…",
+  extraGroupLabel = "Extra",
 }: {
   name: string;
-  options: (Option & { hint?: string; searchText?: string })[];
+  // `extra`: grouped after the others under `extraGroupLabel`, with a badge (extra categories).
+  options: (Option & { hint?: string; searchText?: string; extra?: boolean })[];
   label: string;
   anyLabel?: string;
   searchPlaceholder?: string;
+  extraGroupLabel?: string;
 }) {
   const { startTransition } = useContext(FiltersContext);
   const [state, setState] = useQueryStates(
@@ -217,6 +221,7 @@ export function FilterCombobox({
   // Selected options first, so they stay in reach while searching.
   const ordered = [...matching.filter((o) => selected.includes(o.value)), ...matching.filter((o) => !selected.includes(o.value))];
   const first = options.find((o) => o.value === selected[0]);
+  const firstExtra = ordered.findIndex((o) => o.extra && !selected.includes(o.value));
 
   return (
     <Popover onOpenChange={(open) => !open && setSearch("")}>
@@ -238,19 +243,29 @@ export function FilterCombobox({
           </InputGroup>
         </div>
         <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-multiselectable aria-label={label}>
-          {ordered.slice(0, COMBOBOX_SHOWN).map((o) => {
+          {ordered.slice(0, COMBOBOX_SHOWN).map((o, i) => {
             const checked = selected.includes(o.value);
             return (
-              <li key={o.value} role="option" aria-selected={checked}>
-                <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
-                  <Checkbox checked={checked} onCheckedChange={(on) => toggle(o.value, on === true)} className="mt-0.5" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{o.label}</span>
-                    {o.hint ? <span className="block truncate text-xs text-muted-foreground">{o.hint}</span> : null}
-                  </span>
-                  {o.count != null ? <span className="text-xs text-muted-foreground tabular-nums">{o.count.toLocaleString("en-GB")}</span> : null}
-                </label>
-              </li>
+              <Fragment key={o.value}>
+                {i === firstExtra ? (
+                  <li role="presentation" className="mt-1 border-t px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                    {extraGroupLabel}
+                  </li>
+                ) : null}
+                <li role="option" aria-selected={checked}>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+                    <Checkbox checked={checked} onCheckedChange={(on) => toggle(o.value, on === true)} className="mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate">{o.label}</span>
+                        {o.extra ? <ExtraCategoryBadge compact /> : null}
+                      </span>
+                      {o.hint ? <span className="block truncate text-xs text-muted-foreground">{o.hint}</span> : null}
+                    </span>
+                    {o.count != null ? <span className="text-xs text-muted-foreground tabular-nums">{o.count.toLocaleString("en-GB")}</span> : null}
+                  </label>
+                </li>
+              </Fragment>
             );
           })}
           {ordered.length === 0 ? <li className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing matches “{search}”.</li> : null}

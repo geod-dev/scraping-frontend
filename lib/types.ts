@@ -9,6 +9,10 @@ export type Paginated<T> = {
 };
 
 export type CategoryStatus = "active" | "missing";
+// main: the category's subtree owns products (each product belongs to exactly one main
+// category). extra: its subtree owns no product but lists products filed under other
+// categories (promotions, pallet sales...); it can sit below a main category.
+export type CategoryRole = "main" | "extra";
 export type ProductStatus = "active" | "missing";
 export type TaskName = "catalog_sync" | "price_refresh" | "matching";
 export type JobStatus =
@@ -194,6 +198,7 @@ export type Category = {
   last_seen_at: string;
   last_seen_run_id: number | null;
   missing_since: string | null;
+  role: CategoryRole;
   created_at: string;
   updated_at: string;
 };
@@ -203,6 +208,9 @@ export type CategoryDetail = Category & {
   children_count: number;
   product_count: number;
   subtree_product_count: number;
+  // Products the category and its subtree show, listed ones included: what
+  // GET /products?category_id= returns, and the count of an extra category.
+  listed_product_count: number;
 };
 
 // A banned category: deleted with its subtree and skipped by the catalog syncs. `id` is the
@@ -241,8 +249,13 @@ export type CategoryTreeNode = {
   kind: string | null;
   status: CategoryStatus;
   external_id: string | null;
+  role: CategoryRole;
+  // Products owned directly / by the subtree: always 0 for an extra category.
   product_count: number;
   subtree_product_count: number;
+  // Products the category and its subtree show, listed ones included (what
+  // GET /products?category_id= returns).
+  listed_product_count: number;
   children?: CategoryTreeNode[];
 };
 
@@ -320,6 +333,9 @@ export type ProductDetail = ProductListItem & {
   extra: Record<string, unknown>;
   last_seen_run_id: number | null;
   category_path: CategoryRef[];
+  // Other categories that list this product (extra categories), directly or through its
+  // family; by name.
+  listed_in: CategoryRef[];
   latest_prices: Observation[];
   // Associations (auto_matched or validated) involving this product: competitor products
   // associated with it for a reference product, 0 or 1 for a competitor product.

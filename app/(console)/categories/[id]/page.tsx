@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DatabaseZapIcon, ExternalLinkIcon, GitCompareArrowsIcon, TagIcon } from "lucide-react";
 import { BanCategoryButton, type CategoryTarget } from "@/components/category-actions";
-import { ApiUnavailable, DefinitionList, EmptyState, KeyValueList, PageHeader, Panel, PanelLink, StatCard, StatusBadge, ToneBadge } from "@/components/kit";
+import { ApiUnavailable, DefinitionList, EmptyState, ExtraCategoryBadge, KeyValueList, PageHeader, Panel, PanelLink, StatCard, StatusBadge, ToneBadge } from "@/components/kit";
 import { LiveRefresh } from "@/components/live";
 import { ProductCard } from "@/components/product-card";
 import { StartTaskButton } from "@/components/task-dialog";
@@ -51,6 +51,8 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
       }
     : null;
   const busyReason = competitor && competitor.worker.state !== "idle" ? "The worker of this competitor is busy with another job" : null;
+  // An extra category owns no product: it lists products filed in other categories.
+  const extra = category.role === "extra";
   const jobProps = target ? { competitorKey: target.competitorKey, competitorName: target.competitorName, category: { id: category.id, name: category.name } } : null;
 
   return (
@@ -64,6 +66,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
         title={category.name}
         description={
           <span className="inline-flex flex-wrap items-center gap-2">
+            {extra ? <ExtraCategoryBadge /> : null}
             {category.kind ? <ToneBadge tone="violet">{labelize(category.kind)}</ToneBadge> : null}
             <StatusBadge status={category.status} />
             <a href={category.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:text-primary/80">
@@ -82,7 +85,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
               )}
               <BanCategoryButton
                 category={target}
-                impact={{ subcategories: category.children_count, direct: true, products: category.subtree_product_count }}
+                impact={{ subcategories: category.children_count, direct: true, products: category.subtree_product_count, listed: category.listed_product_count }}
                 afterBanHref={parent ? `/categories/${parent.id}` : treeHref}
               />
             </>
@@ -91,8 +94,12 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
       />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Products incl. sub-categories" value={formatNumber(category.subtree_product_count)} href={`/products?category_id=${category.id}`} />
-        <StatCard label="Direct products" value={formatNumber(category.product_count)} />
+        <StatCard label="Products incl. sub-categories" value={formatNumber(category.listed_product_count)} href={`/products?category_id=${category.id}`} />
+        {extra ? (
+          <StatCard label="Filed in other categories" value={formatNumber(category.listed_product_count - category.subtree_product_count)} />
+        ) : (
+          <StatCard label="Direct products" value={formatNumber(category.product_count)} />
+        )}
         <StatCard label="Sub-categories" value={formatNumber(category.children_count)} />
         <StatCard label="Last seen" value={formatDateTime(category.last_seen_at)} />
       </section>
@@ -111,6 +118,7 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition hover:border-primary/40 hover:bg-primary/5 ${c.status === "missing" ? "text-muted-foreground line-through" : ""}`}
                     >
                       {c.name}
+                      {c.role === "extra" && !extra ? <ExtraCategoryBadge compact /> : null}
                     </Link>
                   </li>
                 ))}
@@ -118,7 +126,11 @@ export default async function CategoryDetailPage({ params }: { params: Promise<{
             </Panel>
           ) : null}
 
-          <Panel title="Products" description="Including sub-categories, most recently seen first" actions={<PanelLink href={`/products?category_id=${category.id}`}>All products</PanelLink>}>
+          <Panel
+            title="Products"
+            description={extra ? "Listed by this category and its sub-categories, most recently seen first" : "Including sub-categories, most recently seen first"}
+            actions={<PanelLink href={`/products?category_id=${category.id}`}>All products</PanelLink>}
+          >
             {products.error ? (
               <ApiUnavailable message={products.error} />
             ) : products.data && products.data.items.length > 0 ? (

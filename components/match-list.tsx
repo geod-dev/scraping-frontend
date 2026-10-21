@@ -69,7 +69,7 @@ export function MatchFilters({ kind, filters, competitors, categories }: { kind:
           </FilterField>
           {filters.state.competitor ? (
             <FilterField label="Categories" hint="Products in any of these categories or their sub-categories">
-              <FilterCombobox name="category_id" label="Categories" anyLabel="Any category" searchPlaceholder="Search categories…" options={categories} />
+              <FilterCombobox name="category_id" label="Categories" anyLabel="Any category" searchPlaceholder="Search categories…" extraGroupLabel="Extra categories" options={categories} />
             </FilterField>
           ) : null}
         </FilterGroup>

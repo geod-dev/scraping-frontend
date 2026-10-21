@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatNumber, labelize } from "@/lib/format";
 import { buildQuery, type QueryValues } from "@/lib/params";
 import type { Chip } from "@/lib/filter-chips";
@@ -236,6 +237,30 @@ export function ToneBadge({ children, tone = "neutral", className }: { children:
     <Badge variant="secondary" className={cn(TONE_CLASSES[tone], className)}>
       {children}
     </Badge>
+  );
+}
+
+export const EXTRA_CATEGORY_HINT = "Merchandising category: lists products filed under other categories";
+
+// Badge of an extra category (role "extra"), explained in a tooltip; `compact` for dense lists,
+// where a native title replaces the tooltip.
+export function ExtraCategoryBadge({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <ToneBadge tone="warning" className="h-4 px-1.5 text-[10px]">
+        <span title={EXTRA_CATEGORY_HINT}>extra</span>
+      </ToneBadge>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Extra category. ${EXTRA_CATEGORY_HINT}`}>
+          <ToneBadge tone="warning">extra</ToneBadge>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{EXTRA_CATEGORY_HINT}</TooltipContent>
+    </Tooltip>
   );
 }
 

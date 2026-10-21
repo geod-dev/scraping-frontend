@@ -106,6 +106,22 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           ...product.category_path.map((c) => ({ label: c.name, href: `/categories/${c.id}` })),
         ]}
         title={product.title ?? "Untitled product"}
+        description={
+          // Extra categories (promotions, pallet sales...) showing the product besides its own.
+          product.listed_in?.length > 0 ? (
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span>Also listed in:</span>
+              {product.listed_in.map((c, i) => (
+                <span key={c.id}>
+                  <Link href={`/categories/${c.id}`} className="text-foreground/80 hover:text-primary hover:underline">
+                    {c.name}
+                  </Link>
+                  {i < product.listed_in.length - 1 ? "," : null}
+                </span>
+              ))}
+            </span>
+          ) : null
+        }
         actions={
           <>
             <a href={product.url} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "lg" })}>

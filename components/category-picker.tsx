@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ChevronsUpDownIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ExtraCategoryBadge } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -30,6 +31,8 @@ export function CategoryPicker({
 
   const words = search.toLocaleLowerCase("fr").split(/\s+/).filter(Boolean);
   const matching = (options ?? []).filter((o) => words.every((w) => o.searchText.toLocaleLowerCase("fr").includes(w)));
+  // The extra categories come after the main ones (see categoryOptions), under their own header.
+  const firstExtra = matching.findIndex((o) => o.extra);
 
   return (
     <Popover
@@ -47,7 +50,10 @@ export function CategoryPicker({
             </span>
           ) : selected ? (
             <span className="min-w-0 text-left">
-              <span className="block truncate">{selected.label}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="truncate">{selected.label}</span>
+                {selected.extra ? <ExtraCategoryBadge compact /> : null}
+              </span>
               {selected.hint ? <span className="block truncate text-xs text-muted-foreground">{selected.hint}</span> : null}
             </span>
           ) : (
@@ -66,25 +72,35 @@ export function CategoryPicker({
           </InputGroup>
         </div>
         <ul className="max-h-72 overflow-y-auto p-1" role="listbox" aria-label="Categories">
-          {matching.slice(0, SHOWN).map((o) => {
+          {matching.slice(0, SHOWN).map((o, i) => {
             const current = o.value === String(value);
             return (
-              <li key={o.value} role="option" aria-selected={current}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(Number(o.value));
-                    setOpen(false);
-                  }}
-                  className={cn("flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", current && "bg-primary/10")}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{o.label}</span>
-                    {o.hint ? <span className="block truncate text-xs text-muted-foreground">{o.hint}</span> : null}
-                  </span>
-                  <span className="text-xs text-muted-foreground tabular-nums">{o.count.toLocaleString("en-GB")}</span>
-                </button>
-              </li>
+              <Fragment key={o.value}>
+                {i === firstExtra ? (
+                  <li role="presentation" className="mt-1 border-t px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                    Extra categories
+                  </li>
+                ) : null}
+                <li role="option" aria-selected={current}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(Number(o.value));
+                      setOpen(false);
+                    }}
+                    className={cn("flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", current && "bg-primary/10")}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate">{o.label}</span>
+                        {o.extra ? <ExtraCategoryBadge compact /> : null}
+                      </span>
+                      {o.hint ? <span className="block truncate text-xs text-muted-foreground">{o.hint}</span> : null}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{o.count.toLocaleString("en-GB")}</span>
+                  </button>
+                </li>
+              </Fragment>
             );
           })}
           {options && options.length === 0 ? <li className="px-2 py-6 text-center text-sm text-muted-foreground">No categories yet: run a full catalog sync first.</li> : null}
