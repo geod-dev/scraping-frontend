@@ -106,12 +106,7 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
           hint={`${formatNumber(competitor.stats.products_missing)} missing`}
           href={`/products?competitor=${competitor.key}`}
         />
-        <StatCard
-          label="Categories"
-          value={formatNumber(competitor.stats.categories)}
-          hint={competitor.stats.banned_categories ? `${formatNumber(competitor.stats.banned_categories)} banned` : undefined}
-          href={`/categories?competitor=${competitor.key}`}
-        />
+        <StatCard label="Categories" value={formatNumber(competitor.stats.categories)} href={`/categories?competitor=${competitor.key}`} />
         <StatCard label="Price observations" value={formatNumber(competitor.stats.observations)} />
         <StatCard label="Last price seen" value={formatRelative(competitor.stats.last_price_observed_at)} />
       </section>

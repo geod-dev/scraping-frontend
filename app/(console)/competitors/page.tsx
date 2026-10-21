@@ -45,11 +45,6 @@ export default async function CompetitorsPage() {
                         <div className="flex shrink-0 flex-col items-end gap-1">
                           <StatusBadge status={c.worker.state} />
                           {c.enabled ? null : <ToneBadge tone="warning">Disabled</ToneBadge>}
-                          {c.stats.banned_categories ? (
-                            <ToneBadge tone="danger">
-                              {formatNumber(c.stats.banned_categories)} banned {c.stats.banned_categories === 1 ? "category" : "categories"}
-                            </ToneBadge>
-                          ) : null}
                         </div>
                       </div>
 

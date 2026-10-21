@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ExternalLinkIcon } from "lucide-react";
 import { UnbanButton } from "@/components/category-actions";
-import { CategoryTabs } from "@/components/category-tabs";
 import { FilterBar, FilterSearch, FilterSelect } from "@/components/filters";
 import { ApiUnavailable, EmptyState, PageHeader, Pagination } from "@/components/kit";
 import { LiveRefresh } from "@/components/live";
@@ -35,7 +34,6 @@ export default async function BannedCategoriesPage({ searchParams }: { searchPar
   const banned = selected
     ? await settle(apiFetch<Paginated<BannedCategory>>("/categories/banned", { query: { competitor: selected, q, limit: PAGE_SIZE, offset } }))
     : null;
-  const competitor = competitors.data?.find((c) => c.key === selected);
 
   return (
     <>
@@ -44,7 +42,6 @@ export default async function BannedCategoriesPage({ searchParams }: { searchPar
         breadcrumbs={[{ label: "Categories", href: selected ? `/categories?competitor=${encodeURIComponent(selected)}` : "/categories" }, { label: "Banned" }]}
         title="Banned categories"
         description="Deleted with their sub-categories, products, prices and matches, and skipped by every catalog sync. Unbanning recreates a category empty, under a new id."
-        tabs={selected ? <CategoryTabs competitor={selected} active="banned" banned={q ? competitor?.stats.banned_categories : banned?.data?.total} /> : undefined}
         toolbar={
           <FilterBar>
             <FilterSelect name="competitor" label="Competitor" defaultValue={first} options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />
