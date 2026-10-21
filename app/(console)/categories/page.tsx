@@ -26,18 +26,20 @@ function TreeNodes({ nodes, depth = 0, context }: { nodes: CategoryTreeNode[]; d
       {nodes.map((node) => {
         const hasChildren = (node.children?.length ?? 0) > 0;
         const row = (
-          <div className="flex flex-wrap items-center gap-2 py-1">
+          <div className="group/row flex flex-wrap items-center gap-2 py-1">
             <Link href={`/categories/${node.id}`} className={`text-sm hover:text-primary ${node.status === "missing" ? "text-muted-foreground line-through" : ""}`}>
               {node.name}
             </Link>
             {node.status === "missing" ? <StatusBadge status="missing" /> : null}
             {node.kind ? <ToneBadge>{labelize(node.kind)}</ToneBadge> : null}
-            <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatNumber(node.subtree_product_count)} products</span>
-            <CategoryMenu
-              category={{ ...context.competitor, id: node.id, name: node.name }}
-              impact={{ subcategories: descendants(node), direct: false, products: node.subtree_product_count }}
-              busyReason={context.busyReason}
-            />
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              <span className="text-xs text-muted-foreground tabular-nums">{formatNumber(node.subtree_product_count)} products</span>
+              <CategoryMenu
+                category={{ ...context.competitor, id: node.id, name: node.name }}
+                impact={{ subcategories: descendants(node), direct: false, products: node.subtree_product_count }}
+                busyReason={context.busyReason}
+              />
+            </span>
           </div>
         );
         if (!hasChildren) {
@@ -91,7 +93,7 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
       {selected ? <LiveRefresh on={["job.status", "competitor.updated"]} competitor={selected} /> : null}
       <PageHeader
         title="Categories"
-        description="The category tree of a competitor, with product counts including sub-categories. Use the ⋯ menu of a category to scrape, match or ban it."
+        description="The category tree of a competitor, with product counts including sub-categories."
         toolbar={
           <FilterBar>
             <FilterSelect name="competitor" label="Competitor" defaultValue={first} options={(competitors.data ?? []).map((c) => ({ value: c.key, label: c.name }))} />

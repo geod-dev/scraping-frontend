@@ -43,14 +43,14 @@ const ITEMS: { action: Action; label: string; icon: typeof DatabaseZapIcon }[] =
   { action: "matching", label: "Match this category…", icon: GitCompareArrowsIcon },
 ];
 
-// "⋯" menu of a category: its jobs, then the ban. `busyReason` disables the jobs.
+// "⋯" menu of a category row: its jobs, then the ban. `busyReason` disables the jobs. The
+// button is compact and shows on hover or focus of the row (`group/row`), always on touch screens.
 export function CategoryMenu({
   category,
   impact,
   busyReason,
   afterBanHref,
   actions = ["catalog_sync", "price_refresh", "matching", "ban"],
-  size = "icon-sm",
 }: {
   category: CategoryTarget;
   impact: BanImpact;
@@ -58,7 +58,6 @@ export function CategoryMenu({
   // Where to go once the category is banned (it no longer exists); refreshes when absent.
   afterBanHref?: string;
   actions?: Action[];
-  size?: "icon-sm" | "icon-lg";
 }) {
   const [open, setOpen] = useState<Action | null>(null);
   const items = ITEMS.filter((i) => actions.includes(i.action) && !(i.action === "matching" && category.isReference));
@@ -67,7 +66,13 @@ export function CategoryMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size={size} aria-label={`Actions on ${category.name}`} title="Actions">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Actions on ${category.name}`}
+            title="Actions"
+            className="-my-1 text-muted-foreground opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+          >
             <EllipsisIcon />
           </Button>
         </DropdownMenuTrigger>
