@@ -294,6 +294,14 @@ export type Observation = {
   metadata: Record<string, unknown>;
 };
 
+// Price history of one product for the price chart: one point per capture time (its lowest
+// unit price then), oldest first. `currency` is null when the product has no observation.
+export type PriceSeries = {
+  product_id: number;
+  currency: string | null;
+  points: { observed_at: string; price: string; is_promotional: boolean | null }[];
+};
+
 export type ProductListItem = {
   id: number;
   competitor_id: number;

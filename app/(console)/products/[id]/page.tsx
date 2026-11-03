@@ -6,7 +6,7 @@ import { ApiUnavailable, DefinitionList, EmptyState, KeyValueList, PageHeader, P
 import { LinkRow } from "@/components/link-row";
 import { MatchStatusBadge, ProductCell, ScoreRing } from "@/components/matching";
 import { PriceLine, PriceTrendBadge } from "@/components/price";
-import { PriceChart, type PricePoint } from "@/components/price-chart";
+import { PriceChart, PRICE_SERIES_LIMIT, type PricePoint, type PriceSeriesInput } from "@/components/price-chart";
 import { ProductThumb } from "@/components/product-thumb";
 import { ReadMore } from "@/components/read-more";
 import { buttonVariants } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { formatDateTime, formatNumber, formatPrice, formatRelative, labelize } f
 import { firstImage, productImages } from "@/lib/images";
 import { scoreThresholds } from "@/lib/matching";
 import { cn } from "@/lib/utils";
-import type { Competitor, MatchListItem, MatchingConfig, Observation, Paginated, PriceSummary, ProductDetail } from "@/lib/types";
+import type { Competitor, MatchListItem, MatchingConfig, Paginated, PriceSeries, PriceSummary, ProductDetail } from "@/lib/types";
 
 const ASSOCIATED_LIMIT = 20;
 
@@ -26,18 +26,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: `Product ${id}` };
 }
 
-// One point per observation time: the lowest unit price seen at that time.
-function toChartPoints(history: Observation[]): PricePoint[] {
-  const byTime = new Map<string, { price: number; promotional: boolean }>();
-  for (const obs of history) {
-    const price = Number(obs.price);
-    if (Number.isNaN(price)) continue;
-    const current = byTime.get(obs.observed_at);
-    if (!current || price < current.price) byTime.set(obs.observed_at, { price, promotional: obs.is_promotional === true });
-  }
-  return [...byTime.entries()]
-    .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
-    .map(([observedAt, v]) => ({ observedAt, price: v.price, promotional: v.promotional }));
+// The API already gives one point per capture time (its lowest unit price), oldest first.
+function toChartPoints(points: PriceSeries["points"]): PricePoint[] {
+  return points.map((p) => ({ observedAt: p.observed_at, price: Number(p.price) })).filter((p) => Number.isFinite(p.price));
 }
 
 // Relative gap of a competitor price with the Antalis price, on the "from" price of each.
@@ -68,8 +59,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   // Matching: a competitor product has a `matching` summary; a reference (Antalis) product
   // lists the competitor products associated with or proposing it (price comparison).
-  const [history, config, competitors] = await Promise.all([
-    settle(apiFetch<Observation[]>(`/products/${productId}/prices/history`)),
+  const [config, competitors] = await Promise.all([
     settle(apiFetch<MatchingConfig>("/matching/config")),
     settle(apiFetch<Competitor[]>("/competitors")),
   ]);
@@ -92,7 +82,27 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   }
 
   const currency = product.latest_price?.currency ?? product.latest_prices[0]?.currency ?? "EUR";
-  const chartPoints = history.data ? toChartPoints(history.data) : [];
+
+  // Price chart: this product with the products it is matched with (the Antalis equivalent of a
+  // competitor product, or the best-scored competitor products of a reference product).
+  const matchedIds = isReference ? (associated?.data?.items.map((m) => m.product.id) ?? []) : matchedId ? [matchedId] : [];
+  const chartIds = [product.id, ...matchedIds].slice(0, PRICE_SERIES_LIMIT);
+  const history = await settle(apiFetch<PriceSeries[]>("/products/price-series", { query: { ids: chartIds.join(",") } }));
+  const referenceName = competitors.data?.find((c) => c.id === referenceId)?.name ?? "Antalis";
+  const labels = new Map<number, string>([[product.id, competitor?.name ?? "This product"]]);
+  if (isReference) associated?.data?.items.forEach((m) => labels.set(m.product.id, competitors.data?.find((c) => c.id === m.competitor_id)?.name ?? m.competitor_key));
+  else if (matchedId) labels.set(matchedId, referenceName);
+  // Series in another currency than this product's are left out: they cannot share the axis.
+  const chartSeries: PriceSeriesInput[] = (history.data ?? [])
+    .filter((s) => s.currency === currency)
+    .map((s) => ({ label: labels.get(s.product_id) ?? "Product", points: toChartPoints(s.points) }))
+    .filter((s) => s.points.length > 0);
+  const chartDescription =
+    chartSeries.length > 1
+      ? `${chartSeries.length} products, lowest unit price per capture. A price holds until its next capture.${product.match_count > matchedIds.length ? ` Best ${matchedIds.length} of ${product.match_count} matches shown.` : ""}`
+      : chartSeries.length === 1
+        ? `${chartSeries[0].points.length} observation${chartSeries[0].points.length > 1 ? "s" : ""}, lowest unit price per capture`
+        : undefined;
   const images = productImages(product.images);
   const description = product.description || product.long_description;
   const thresholds = scoreThresholds(config.data);
@@ -169,8 +179,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          <Panel title="Price history" description={chartPoints.length > 0 ? `${chartPoints.length} observation${chartPoints.length > 1 ? "s" : ""}, lowest unit price per capture` : undefined}>
-            {history.error ? <ApiUnavailable message={history.error} /> : chartPoints.length > 0 ? <PriceChart points={chartPoints} currency={currency} /> : <EmptyState title="No price observations yet" />}
+          <Panel title="Price history" description={chartDescription}>
+            {history.error ? <ApiUnavailable message={history.error} /> : chartSeries.length > 0 ? <PriceChart series={chartSeries} currency={currency} /> : <EmptyState title="No price observations yet" />}
           </Panel>
 
           {isReference ? (
