@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ToneBadge } from "@/components/kit";
-import { PriceLine, PriceTrendBadge } from "@/components/price";
+import { ApiPriceLine, PriceLine, PriceTrendBadge } from "@/components/price";
 import { ProductThumb } from "@/components/product-thumb";
 import { Card } from "@/components/ui/card";
 import { firstImage } from "@/lib/images";
@@ -27,6 +27,11 @@ export function ProductCard({ product: p, competitor }: { product: ProductListIt
             <PriceLine price={p.latest_price} className="text-sm" />
             <PriceTrendBadge trend={p.price_trend} currency={p.latest_price?.currency} />
           </div>
+          {p.api_price ? (
+            <p className="truncate text-xs text-muted-foreground">
+              API: <ApiPriceLine price={p.api_price} compact className="text-xs text-foreground" />
+            </p>
+          ) : null}
         </div>
       </Card>
     </Link>

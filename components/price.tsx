@@ -1,7 +1,7 @@
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatPrice, formatRelative } from "@/lib/format";
-import type { PriceSummary, PriceTrend } from "@/lib/types";
+import type { ApiPrice, PriceSummary, PriceTrend } from "@/lib/types";
 
 // "From" price with its unit and the number of quantity tiers.
 export function PriceLine({ price, className }: { price: PriceSummary | null | undefined; className?: string }) {
@@ -17,6 +17,51 @@ export function PriceLine({ price, className }: { price: PriceSummary | null | u
         </span>
       ) : null}
       {price.tiers > 1 ? <span className="text-xs text-muted-foreground"> · {price.tiers} tiers</span> : null}
+    </span>
+  );
+}
+
+// Antalis unit codes (order and price units of the pricing API).
+const API_UNITS: Record<string, string> = {
+  ST: "piece",
+  ZSH: "sheet",
+  ZRM: "ream",
+  PAL: "pallet",
+  ROL: "roll",
+  ZBL: "bundle",
+  KAR: "carton",
+  ZBX: "box",
+};
+
+export function apiUnitLabel(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return API_UNITS[code.toUpperCase()] ?? code;
+}
+
+// Customer price from the pricing API: "€ 92.35 / 1000 sheet", or the reason the API gave none.
+export function ApiPriceLine({ price, className, compact }: { price: ApiPrice | null | undefined; className?: string; compact?: boolean }) {
+  if (!price) return <span className="text-muted-foreground">—</span>;
+  if (price.unit_price === null) {
+    return (
+      <span className={cn("text-xs text-muted-foreground", className)} title={price.error_code ? `API error ${price.error_code}` : undefined}>
+        {compact ? "Not priced" : `Not priced by the API: ${price.error_message ?? price.error_code ?? "no price"}`}
+      </span>
+    );
+  }
+  const unit = apiUnitLabel(price.price_unit);
+  return (
+    <span className={cn("whitespace-nowrap", className)}>
+      <span className="font-semibold">{formatPrice(price.unit_price, price.currency ?? "EUR")}</span>
+      {unit ? (
+        <span className="text-xs text-muted-foreground">
+          {" "}
+          / {price.price_quantity && Number(price.price_quantity) !== 1 ? `${Number(price.price_quantity)} ` : ""}
+          {unit}
+        </span>
+      ) : null}
+      {!compact && price.discount_percent && Number(price.discount_percent) !== 0 ? (
+        <span className="text-xs text-muted-foreground"> · −{Number(price.discount_percent)}% off list</span>
+      ) : null}
     </span>
   );
 }

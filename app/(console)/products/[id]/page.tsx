@@ -5,7 +5,7 @@ import { ImageGallery } from "@/components/image-gallery";
 import { ApiUnavailable, DefinitionList, EmptyState, KeyValueList, PageHeader, Panel, PanelLink, RowChevron, StatusBadge, ToneBadge } from "@/components/kit";
 import { LinkRow } from "@/components/link-row";
 import { MatchStatusBadge, ProductCell, ScoreRing } from "@/components/matching";
-import { PriceLine, PriceTrendBadge } from "@/components/price";
+import { ApiPriceLine, apiUnitLabel, PriceLine, PriceTrendBadge } from "@/components/price";
 import { PriceChart, PRICE_SERIES_LIMIT, type PricePoint, type PriceSeriesInput } from "@/components/price-chart";
 import { ProductThumb } from "@/components/product-thumb";
 import { ReadMore } from "@/components/read-more";
@@ -17,7 +17,7 @@ import { formatDateTime, formatNumber, formatPrice, formatRelative, labelize } f
 import { firstImage, productImages } from "@/lib/images";
 import { scoreThresholds } from "@/lib/matching";
 import { cn } from "@/lib/utils";
-import type { Competitor, MatchListItem, MatchingConfig, Paginated, PriceSeries, PriceSummary, ProductDetail } from "@/lib/types";
+import type { ApiPrice, Competitor, MatchListItem, MatchingConfig, Paginated, PriceSeries, PriceSummary, ProductDetail } from "@/lib/types";
 
 const ASSOCIATED_LIMIT = 20;
 
@@ -38,6 +38,22 @@ function priceGap(price: PriceSummary | null | undefined, reference: PriceSummar
   if (!price || !reference || !Number.isFinite(a) || !Number.isFinite(b) || b === 0 || price.currency !== reference.currency) return null;
   return ((a - b) / b) * 100;
 }
+
+// Customer price (API) vs web "from" price, in percent, when both are per the same unit: the
+// web price unit code (page metadata) equals the API price unit. Null when not comparable.
+function apiGap(api: ApiPrice | null | undefined, product: ProductDetail): number | null {
+  const web = product.latest_price;
+  if (!api?.unit_price || !web || web.price_basis !== "unit") return null;
+  if ((api.currency ?? "EUR") !== web.currency) return null;
+  const webCode = product.latest_prices[0]?.metadata?.price_unit_code;
+  if (typeof webCode !== "string" || !api.price_unit || webCode.toUpperCase() !== api.price_unit.toUpperCase()) return null;
+  const webPerUnit = Number(web.from_price) / Number(web.price_unit_quantity ?? 1);
+  const apiPerUnit = Number(api.unit_price) / Number(api.price_quantity || 1);
+  if (!Number.isFinite(webPerUnit) || !Number.isFinite(apiPerUnit) || webPerUnit <= 0) return null;
+  return ((apiPerUnit - webPerUnit) / webPerUnit) * 100;
+}
+
+const AVAILABILITY: Record<string, string> = { Y: "In stock", N: "Not available", P: "Partially available" };
 
 export default async function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -107,6 +123,8 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
   const description = product.description || product.long_description;
   const thresholds = scoreThresholds(config.data);
   const gap = priceGap(product.latest_price, antalisProduct?.data?.latest_price);
+  const api = product.api_price ?? null;
+  const customerGap = apiGap(api, product);
 
   return (
     <>
@@ -164,6 +182,19 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
             <PriceTrendBadge trend={product.price_trend} currency={currency} />
             {product.latest_price ? <span className="text-xs text-muted-foreground">{labelize(product.latest_price.tax_mode)} · seen {formatRelative(product.latest_price.observed_at)}</span> : null}
           </div>
+          {api ? (
+            <div className="-mt-3 flex flex-wrap items-baseline gap-3">
+              <ToneBadge tone="info">Customer price (API)</ToneBadge>
+              <ApiPriceLine price={api} className="text-lg" />
+              {customerGap !== null && Math.abs(customerGap) >= 0.05 ? (
+                <span className={cn("rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums", customerGap < 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")} title="Customer price vs web price, per unit">
+                  {customerGap > 0 ? "+" : "−"}
+                  {Math.abs(customerGap).toFixed(1)}% vs web
+                </span>
+              ) : null}
+              <span className="text-xs text-muted-foreground">Excl. tax · asked {formatRelative(api.observed_at)}</span>
+            </div>
+          ) : null}
           {description ? <ReadMore text={description} lines={4} /> : <p className="text-sm text-muted-foreground">No description available.</p>}
           <DefinitionList
             columns={4}
@@ -236,6 +267,39 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
                 </Table>
               ) : (
                 <EmptyState title="No competitor product matched yet" />
+              )}
+            </Panel>
+          ) : null}
+
+          {api ? (
+            <Panel title="Customer price (API)" description="Latest answer of the pricing API for our customer account; the web prices are kept separately">
+              {api.unit_price === null ? (
+                <p className="text-sm text-muted-foreground">
+                  The API did not price this product: {api.error_message ?? "no price"}
+                  {api.error_code ? <code className="ml-1 text-xs">({api.error_code})</code> : null}
+                </p>
+              ) : (
+                <DefinitionList
+                  columns={4}
+                  items={[
+                    { label: "Unit price (excl. tax)", value: <ApiPriceLine price={api} compact /> },
+                    { label: "Discount on list price", value: api.discount_percent ? `${Number(api.discount_percent)}%` : "—" },
+                    {
+                      label: "Asked for",
+                      value: `${api.requested_quantity ? Number(api.requested_quantity) : "?"} ${apiUnitLabel(api.requested_unit) ?? "sales unit"}`,
+                    },
+                    { label: "Line total (excl. tax)", value: formatPrice(api.line_amount, api.currency ?? "EUR") },
+                    { label: "Availability", value: api.available ? (AVAILABILITY[api.available] ?? api.available) : "—" },
+                    { label: "Price valid until", value: formatDateTime(api.price_valid_until) },
+                    { label: "Asked", value: formatDateTime(api.observed_at) },
+                    {
+                      label: "Additional charges",
+                      value: api.details.additional_pricing?.length
+                        ? api.details.additional_pricing.map((a) => `${a.label ?? a.code}: ${formatPrice(a.total_price, api.currency ?? "EUR")}`).join(", ")
+                        : "—",
+                    },
+                  ]}
+                />
               )}
             </Panel>
           ) : null}

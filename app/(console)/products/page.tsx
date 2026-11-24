@@ -3,7 +3,7 @@ import { LayoutGridIcon, ListIcon } from "lucide-react";
 import { FilterBar, FilterField, FilterGroup, FilterOrder, FilterSearch, FilterSelect, FilterSheet, FilterToggle } from "@/components/filters";
 import { ApiUnavailable, EmptyState, FilterChips, PageHeader, Pagination, RowChevron, StatusBadge } from "@/components/kit";
 import { LinkRow } from "@/components/link-row";
-import { PriceLine, PriceTrendBadge } from "@/components/price";
+import { ApiPriceLine, PriceLine, PriceTrendBadge } from "@/components/price";
 import { ProductCard } from "@/components/product-card";
 import { ProductThumb } from "@/components/product-thumb";
 import { Card } from "@/components/ui/card";
@@ -187,6 +187,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                           <div className="flex flex-col items-end gap-0.5">
                             <PriceLine price={p.latest_price} />
                             <PriceTrendBadge trend={p.price_trend} currency={p.latest_price?.currency} />
+                            {p.api_price ? (
+                              <span className="text-xs text-muted-foreground" title="Customer price from the pricing API">
+                                API: <ApiPriceLine price={p.api_price} compact className="text-xs text-foreground" />
+                              </span>
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{formatRelative(p.last_seen_at)}</TableCell>

@@ -89,6 +89,8 @@ export const TASK_UNAVAILABLE_LABELS: Record<TaskUnavailableReason, string> = {
   reference_catalog_required: "The Antalis catalog has not been fully synced yet",
   reference_missing: "The Antalis catalog is not in the database",
   matching_not_configured: "Matching is not configured on the server (no Voyage API key)",
+  api_pricing_unsupported: "This competitor has no pricing API",
+  api_pricing_not_configured: "The pricing API credentials are not set on the server (ANTALIS_API_USER / ANTALIS_API_PASSWORD)",
 };
 
 export const MATCH_SORTS = ["score", "score_gap", "updated_at", "computed_at", "decided_at", "deprecated_at", "title", "id"] as const;

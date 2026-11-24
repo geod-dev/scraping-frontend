@@ -81,6 +81,19 @@ function taskOptions(task: TaskName, o: TaskOptions): { options: Record<string, 
       },
     };
   }
+  if (task === "api_price_refresh") {
+    if (o.retryFailedRunId !== undefined) return { error: "API prices have no failed pages to retry." };
+    if (o.limit !== undefined && !isPositiveInt(o.limit)) return { error: "Invalid number of products." };
+    if (o.skipFreshHours !== undefined && !isHours(o.skipFreshHours)) return { error: "Invalid number of hours." };
+    return {
+      options: {
+        category: o.categoryId !== undefined ? String(o.categoryId) : undefined,
+        skip_fresh_hours: o.skipFreshHours,
+        include_missing: o.includeMissing === true ? true : undefined,
+        limit: o.limit,
+      },
+    };
+  }
   if (task === "matching") {
     if (o.mode && !MODES.includes(o.mode)) return { error: "Unknown matching mode." };
     if (o.retryFailedRunId !== undefined) return { error: "A matching run has no failed pages to retry." };

@@ -42,12 +42,15 @@ const TITLES: Record<TaskName, string> = {
   catalog_sync: "Sync the catalog",
   price_refresh: "Refresh prices",
   matching: "Match with Antalis",
+  api_price_refresh: "Fetch prices from the API",
 };
 
 const DESCRIPTIONS: Record<TaskName, string> = {
   catalog_sync: "Discovers categories and products across the site, with their details and prices. Uses scraping credits.",
   price_refresh: "Re-reads the prices and details of products already in the catalog, from their product pages. Uses scraping credits.",
   matching: "Associates each product with its Antalis equivalent. No web page is fetched; new product texts are embedded (Voyage AI).",
+  api_price_refresh:
+    "Asks the competitor's pricing API for the prices of our customer account, many products per request. Stored next to the web prices, which are kept. No web page is fetched, no scraping credit.",
 };
 
 const SCOPE_HINTS: Record<TaskName, Partial<Record<Scope, string>>> = {
@@ -60,6 +63,10 @@ const SCOPE_HINTS: Record<TaskName, Partial<Record<Scope, string>>> = {
     all: "Every active product of the competitor.",
     category: "Only the products of the category and its sub-categories.",
     retry: "Only the products that failed in that run.",
+  },
+  api_price_refresh: {
+    all: "Every active product of the competitor.",
+    category: "Only the products of the category and its sub-categories.",
   },
   matching: {
     all: "Every product of the competitor, against the whole Antalis catalog.",
@@ -107,7 +114,7 @@ export function TaskDialog({
   const scopes: { value: Scope; label: string }[] = [
     { value: "all", label: "Whole catalog" },
     { value: "category", label: "One category" },
-    ...(task === "matching" ? [] : [{ value: "retry" as const, label: "Failed pages of a run" }]),
+    ...(task === "matching" || task === "api_price_refresh" ? [] : [{ value: "retry" as const, label: "Failed pages of a run" }]),
   ];
 
   // The options, or what is wrong with the form.
@@ -129,8 +136,10 @@ export function TaskDialog({
         ? { maxProducts: numberField(maxProducts), resumeWithinHours: numberField(resumeWithinHours, false) }
         : { limit: numberField(limit), skipFreshHours: numberField(skipFreshHours, false) };
     if (Object.values(numbers).some((n) => Number.isNaN(n))) return { invalid: "Advanced options: enter positive numbers or leave the fields empty." };
-    if (task === "price_refresh" && numbers.limit === 0) return { invalid: "Advanced options: the number of products must be at least 1." };
-    return task === "catalog_sync" ? { options: { ...options, ...numbers, skipProducts } } : { options: { ...options, ...numbers, updateDetails, includeMissing } };
+    if (task !== "catalog_sync" && numbers.limit === 0) return { invalid: "Advanced options: the number of products must be at least 1." };
+    if (task === "catalog_sync") return { options: { ...options, ...numbers, skipProducts } };
+    if (task === "api_price_refresh") return { options: { ...options, ...numbers, includeMissing } };
+    return { options: { ...options, ...numbers, updateDetails, includeMissing } };
   }
 
   const read = readOptions();
@@ -264,6 +273,13 @@ export function TaskDialog({
                     <NumberField id="skip-fresh" label="Skip products priced less than … hours ago" value={skipFreshHours} onChange={setSkipFreshHours} placeholder="None" step="any" />
                     <NumberField id="limit" label="At most … products" value={limit} onChange={setLimit} placeholder="All" />
                     <CheckField id="update-details" checked={updateDetails} onChange={setUpdateDetails} label="Also re-read descriptions, characteristics and images (no extra request)" />
+                    <CheckField id="include-missing" checked={includeMissing} onChange={setIncludeMissing} label="Include the products flagged missing" />
+                  </>
+                ) : null}
+                {task === "api_price_refresh" ? (
+                  <>
+                    <NumberField id="skip-fresh" label="Skip products priced by the API less than … hours ago" value={skipFreshHours} onChange={setSkipFreshHours} placeholder="None" step="any" />
+                    <NumberField id="limit" label="At most … products" value={limit} onChange={setLimit} placeholder="All" />
                     <CheckField id="include-missing" checked={includeMissing} onChange={setIncludeMissing} label="Include the products flagged missing" />
                   </>
                 ) : null}

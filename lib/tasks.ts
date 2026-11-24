@@ -11,7 +11,7 @@ export type TaskOptions = {
   maxProducts?: number;
   skipProducts?: boolean;
   resumeWithinHours?: number;
-  // Price refresh.
+  // Price refresh (and API prices: skipFreshHours, includeMissing, limit).
   skipFreshHours?: number;
   updateDetails?: boolean;
   includeMissing?: boolean;
@@ -49,4 +49,5 @@ export const TASK_LABELS: Record<TaskName, string> = {
   catalog_sync: "Catalog sync",
   price_refresh: "Price refresh",
   matching: "Matching",
+  api_price_refresh: "API prices",
 };

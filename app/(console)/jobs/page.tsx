@@ -17,7 +17,7 @@ import type { Competitor, Job, Paginated } from "@/lib/types";
 export const metadata = { title: "Jobs" };
 
 const PAGE_SIZE = 25;
-const TASKS = ["catalog_sync", "price_refresh", "matching"] as const;
+const TASKS = ["catalog_sync", "price_refresh", "matching", "api_price_refresh"] as const;
 const JOB_STATUSES = ["queued", "running", "paused", "succeeded", "partial", "failed", "cancelled", "interrupted"] as const;
 
 export default async function JobsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { DatabaseZapIcon, ExternalLinkIcon, GitCompareArrowsIcon, PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, TagIcon, type LucideIcon } from "lucide-react";
+import { BadgeEuroIcon, DatabaseZapIcon, ExternalLinkIcon, GitCompareArrowsIcon, PauseIcon, PlayIcon, RotateCcwIcon, SquareIcon, TagIcon, type LucideIcon } from "lucide-react";
 import { restartJob, workerControl } from "@/app/actions";
 import { ActionButton } from "@/components/action-button";
 import { EstimateLine, isActiveJob, isRestartableJob, JobCategory, JobOrigin } from "@/components/job-progress";
@@ -22,6 +22,12 @@ import type { CompetitorDetail, MatchingSummary, TaskName } from "@/lib/types";
 const TASKS: { task: TaskName; label: string; description: string; icon: LucideIcon }[] = [
   { task: "catalog_sync", label: "Sync catalog", description: "Discover categories and products across the site.", icon: DatabaseZapIcon },
   { task: "price_refresh", label: "Refresh prices", description: "Re-read prices and details of the products already in the catalog, from their product pages.", icon: TagIcon },
+  {
+    task: "api_price_refresh",
+    label: "Fetch API prices",
+    description: "Ask the competitor's pricing API for our customer prices, many products per request. Kept next to the web prices; no scraping credit.",
+    icon: BadgeEuroIcon,
+  },
   { task: "matching", label: "Match with Antalis", description: "Associate each product with its Antalis equivalent. No web page is fetched.", icon: GitCompareArrowsIcon },
 ];
 
@@ -52,7 +58,8 @@ export default async function CompetitorDetailPage({ params }: { params: Promise
   const state = worker.state;
   // The reference catalog itself is never matched.
   const isReference = worker.tasks?.matching?.reason === "matching_reference";
-  const tasks = TASKS.filter((t) => !(t.task === "matching" && isReference));
+  // The API price task is only listed by the API for competitors that have a pricing API.
+  const tasks = TASKS.filter((t) => !(t.task === "matching" && isReference) && (t.task !== "api_price_refresh" || worker.tasks?.api_price_refresh));
   const [matching, categories] = await Promise.all([
     isReference ? null : settle(apiFetch<MatchingSummary[]>("/matching/summary", { query: { competitor: competitor.key } })),
     jobCategoryNames([job, lastJob]),

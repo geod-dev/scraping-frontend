@@ -14,7 +14,7 @@ export type CategoryStatus = "active" | "missing";
 // categories (promotions, pallet sales...); it can sit below a main category.
 export type CategoryRole = "main" | "extra";
 export type ProductStatus = "active" | "missing";
-export type TaskName = "catalog_sync" | "price_refresh" | "matching";
+export type TaskName = "catalog_sync" | "price_refresh" | "matching" | "api_price_refresh";
 export type JobStatus =
   | "queued"
   | "running"
@@ -45,7 +45,9 @@ export type TaskUnavailableReason =
   | "matching_running"
   | "reference_missing"
   | "matching_not_configured"
-  | "reference_catalog_required";
+  | "reference_catalog_required"
+  | "api_pricing_unsupported"
+  | "api_pricing_not_configured";
 
 export type Health = {
   status: "ok" | "degraded";
@@ -273,6 +275,50 @@ export type PriceSummary = {
   displayed: boolean;
 };
 
+// A price answered by the competitor's pricing API (Antalis: the price of our customer account,
+// which can differ from the public web price). `error_code` set: the API refused the line
+// (unknown product, unknown unit...) and `unit_price` is null.
+export type ApiPrice = {
+  id: number;
+  product_id: number;
+  job_id: number | null;
+  observed_at: string;
+  source: string;
+  requested_unit: string | null;
+  requested_quantity: string | null;
+  // Excl. VAT, for `price_quantity` `price_unit` (e.g. per 1000 sheets).
+  unit_price: string | null;
+  price_quantity: string | null;
+  // Antalis unit code: ST (piece), ZSH (sheet), ROL, KAR, ZBX...
+  price_unit: string | null;
+  currency: string | null;
+  line_amount: string | null;
+  line_vat: string | null;
+  line_total: string | null;
+  discount_percent: string | null;
+  // Y, N or P (partial) for the requested quantity.
+  available: string | null;
+  price_valid_until: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  details: {
+    availability?: { available_qty: string | null; available_date: string | null }[];
+    additional_pricing?: ApiAdditionalPrice[];
+    order_additional_pricing?: ApiAdditionalPrice[];
+    answered_order_unit?: string;
+  } & Record<string, unknown>;
+};
+
+export type ApiAdditionalPrice = {
+  code: string;
+  label: string | null;
+  rate: string | null;
+  rate_currency: string | null;
+  price_qty: string | null;
+  price_unit: string | null;
+  total_price: string | null;
+};
+
 export type Observation = {
   id: number;
   product_id: number;
@@ -326,6 +372,8 @@ export type ProductListItem = {
   latest_price: PriceSummary | null;
   // Last price movement of the product (null when its price never changed).
   price_trend?: PriceTrend | null;
+  // Latest answer of the competitor's pricing API (Antalis customer price); null if never asked.
+  api_price?: ApiPrice | null;
 };
 
 export type PriceTrend = {
