@@ -2235,6 +2235,29 @@
             }
           },
           {
+            "name": "api_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "priced",
+                    "not_priced",
+                    "never"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "latest answer of the pricing API (Antalis customer price): priced (a price above 0), not_priced (asked, refused or 0), never (never asked)",
+              "title": "Api Price"
+            },
+            "description": "latest answer of the pricing API (Antalis customer price): priced (a price above 0), not_priced (asked, refused or 0), never (never asked)"
+          },
+          {
             "name": "attr",
             "in": "query",
             "required": false,
@@ -2268,12 +2291,15 @@
                 "updated_at",
                 "last_seen_at",
                 "last_price_observed_at",
+                "api_price",
                 "id"
               ],
               "type": "string",
+              "description": "api_price: API price per unit; products without one come last",
               "default": "title",
               "title": "Sort"
-            }
+            },
+            "description": "api_price: API price per unit; products without one come last"
           },
           {
             "name": "order",
@@ -2519,6 +2545,27 @@
                 }
               ],
               "title": "Attr"
+            }
+          },
+          {
+            "name": "api_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "priced",
+                    "not_priced",
+                    "never"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Api Price"
             }
           },
           {
@@ -12522,6 +12569,14 @@
             "type": "object",
             "title": "Attributes",
             "description": "normalized attribute -> most frequent values"
+          },
+          "api_prices": {
+            "items": {
+              "$ref": "#/components/schemas/FacetValue"
+            },
+            "type": "array",
+            "title": "Api Prices",
+            "description": "products by latest pricing API answer: priced (above 0), not_priced (refused or 0), never"
           }
         },
         "type": "object",

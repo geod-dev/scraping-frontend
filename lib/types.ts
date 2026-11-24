@@ -405,7 +405,11 @@ export type ProductFacets = {
   brands: { value: string; count: number }[];
   statuses: { value: string; count: number }[];
   attributes: Record<string, { value: unknown; count: number }[]>;
+  // Products by latest pricing API answer: priced (above 0), not_priced (refused or 0), never.
+  api_prices?: { value: ApiPriceState; count: number }[];
 };
+
+export type ApiPriceState = "priced" | "not_priced" | "never";
 
 export type Run = {
   id: number;

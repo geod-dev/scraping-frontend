@@ -41,7 +41,7 @@ export function apiUnitLabel(code: string | null | undefined): string | null {
 // Customer price from the pricing API: "€ 92.35 / 1000 sheet", or the reason the API gave none.
 export function ApiPriceLine({ price, className, compact }: { price: ApiPrice | null | undefined; className?: string; compact?: boolean }) {
   if (!price) return <span className="text-muted-foreground">—</span>;
-  if (price.unit_price === null) {
+  if (price.unit_price === null || Number(price.unit_price) === 0) {
     return (
       <span className={cn("text-xs text-muted-foreground", className)} title={price.error_code ? `API error ${price.error_code}` : undefined}>
         {compact ? "Not priced" : `Not priced by the API: ${price.error_message ?? price.error_code ?? "no price"}`}

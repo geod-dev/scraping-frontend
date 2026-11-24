@@ -13,13 +13,13 @@ import { clearFiltersHref, filterChips } from "@/lib/filter-chips";
 import { formatNumber, formatRelative } from "@/lib/format";
 import { firstImage } from "@/lib/images";
 import { boolFlag, oneOf, positiveInt, text, type SearchParams } from "@/lib/params";
-import type { Competitor, Paginated, ProductFacets, ProductListItem } from "@/lib/types";
+import type { ApiPriceState, Competitor, Paginated, ProductFacets, ProductListItem } from "@/lib/types";
 
 export const metadata = { title: "Products" };
 
 // Divisible by 2, 3, 4 and 6: full rows in every grid width.
 const PAGE_SIZE = 24;
-const SORTS = ["last_seen_at", "title", "reference", "brand", "created_at", "updated_at", "last_price_observed_at", "id"] as const;
+const SORTS = ["last_seen_at", "title", "reference", "brand", "created_at", "updated_at", "last_price_observed_at", "api_price", "id"] as const;
 const SORT_LABELS: Record<(typeof SORTS)[number], string> = {
   last_seen_at: "Last seen",
   title: "Title",
@@ -28,8 +28,11 @@ const SORT_LABELS: Record<(typeof SORTS)[number], string> = {
   created_at: "Created",
   updated_at: "Updated",
   last_price_observed_at: "Last price",
+  api_price: "API price",
   id: "ID",
 };
+const API_PRICE_STATES = ["priced", "not_priced", "never"] as const;
+const API_PRICE_LABELS: Record<ApiPriceState, string> = { priced: "Priced", not_priced: "Not priced (0 or refused)", never: "Never asked" };
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -38,6 +41,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const status = oneOf(sp.status, ["active", "missing"] as const);
   const brand = text(sp.brand);
   const hasPrice = boolFlag(sp.has_price);
+  const apiPrice = oneOf(sp.api_price, API_PRICE_STATES);
   const sort = oneOf(sp.sort, SORTS) ?? "last_seen_at";
   const order = oneOf(sp.order, ["asc", "desc"] as const) ?? "desc";
   const offset = positiveInt(sp.offset, 0);
@@ -48,7 +52,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     settle(apiFetch<Competitor[]>("/competitors")),
     settle(
       apiFetch<Paginated<ProductListItem>>("/products", {
-        query: { competitor, q, status, brand, has_price: hasPrice, sort, order, category_id: categoryId, include_subcategories: categoryId ? true : undefined, limit: PAGE_SIZE, offset },
+        query: { competitor, q, status, brand, has_price: hasPrice, api_price: apiPrice, sort, order, category_id: categoryId, include_subcategories: categoryId ? true : undefined, limit: PAGE_SIZE, offset },
       }),
     ),
     settle(apiFetch<ProductFacets>("/products/facets", { query: { competitor, q, status, category_id: categoryId, include_subcategories: categoryId ? true : undefined } })),
@@ -63,6 +67,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     brand,
     category_id: categoryId ? String(categoryId) : undefined,
     has_price: hasPrice === undefined ? undefined : hasPrice ? "1" : "0",
+    api_price: apiPrice,
     sort: sort === "last_seen_at" ? undefined : sort,
     order: order === "desc" ? undefined : order,
     view: view === "grid" ? undefined : view,
@@ -72,10 +77,14 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     { name: "competitor", label: "Competitor", format: (v) => names.get(v) ?? v },
     { name: "status", label: "Status", format: (v) => (v === "active" ? "Active" : "Missing") },
     { name: "has_price", label: "Price", format: (v) => (v === "1" ? "With price" : "Without price") },
+    { name: "api_price", label: "API price", format: (v) => API_PRICE_LABELS[v as ApiPriceState] ?? v },
     { name: "brand", label: "Brand" },
     { name: "category_id", label: "Category", format: (v) => `#${v} and sub-categories` },
   ]);
   const clearHref = clearFiltersHref("/products", values, ["sort", "order", "view"]);
+  // API price counts (facets), shown only when some product of these filters was asked.
+  const apiFacets = facets.data?.api_prices ?? [];
+  const apiPriceCounts = apiFacets.some((f) => f.value !== "never" && f.count > 0) || apiPrice ? new Map(apiFacets.map((f) => [f.value, f.count])) : null;
   const sheetCount = chips.filter((c) => !["q", "competitor"].includes(c.key)).length;
 
   return (
@@ -123,6 +132,15 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                 <FilterField label="Price">
                   <FilterToggle name="has_price" label="Price" options={[{ value: "1", label: "With price" }, { value: "0", label: "Without price" }]} />
                 </FilterField>
+                {apiPriceCounts ? (
+                  <FilterField label="API price" hint="Latest answer of the pricing API (Antalis customer price), for these filters">
+                    <FilterToggle
+                      name="api_price"
+                      label="API price"
+                      options={API_PRICE_STATES.map((s) => ({ value: s, label: API_PRICE_LABELS[s], count: apiPriceCounts.get(s) ?? 0 }))}
+                    />
+                  </FilterField>
+                ) : null}
               </FilterGroup>
               <FilterGroup title="Brand">
                 <FilterField label="Brand" hint={facets.data ? `${facets.data.brands.length} brands for these filters` : undefined}>

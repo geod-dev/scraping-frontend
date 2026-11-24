@@ -273,7 +273,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
           {api ? (
             <Panel title="Customer price (API)" description="Latest answer of the pricing API for our customer account; the web prices are kept separately">
-              {api.unit_price === null ? (
+              {api.unit_price === null || Number(api.unit_price) === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   The API did not price this product: {api.error_message ?? "no price"}
                   {api.error_code ? <code className="ml-1 text-xs">({api.error_code})</code> : null}
