@@ -43,12 +43,15 @@ const TITLES: Record<TaskName, string> = {
   price_refresh: "Refresh prices",
   matching: "Match with Antalis",
   api_price_refresh: "Fetch prices from the API",
+  ai_review: "Review matches with Jev",
 };
 
 const DESCRIPTIONS: Record<TaskName, string> = {
   catalog_sync: "Discovers categories and products across the site, with their details and prices. Uses scraping credits.",
   price_refresh: "Re-reads the prices and details of products already in the catalog, from their product pages. Uses scraping credits.",
   matching: "Associates each product with its Antalis equivalent. No web page is fetched; new product texts are embedded (Voyage AI).",
+  ai_review:
+    "Sends each match waiting for a review, with the product and its 5 best Antalis candidates, to TypeSafe's Jev model. When Jev is certain enough it validates or rejects the match itself (decided by bot:jev-latest); otherwise the match stays for a human with Jev's suggestion in its history.",
   api_price_refresh:
     "Asks the competitor's pricing API for the prices of our customer account, many products per request. Stored next to the web prices, which are kept. No web page is fetched, no scraping credit.",
 };
@@ -63,6 +66,10 @@ const SCOPE_HINTS: Record<TaskName, Partial<Record<Scope, string>>> = {
     all: "Every active product of the competitor.",
     category: "Only the products of the category and its sub-categories.",
     retry: "Only the products that failed in that run.",
+  },
+  ai_review: {
+    all: "Every match of the competitor waiting for a review, best scores first.",
+    category: "Only the matches of the products of the category and its sub-categories.",
   },
   api_price_refresh: {
     all: "Every active product of the competitor.",
@@ -107,6 +114,8 @@ export function TaskDialog({
   const [limit, setLimit] = useState("");
   const [updateDetails, setUpdateDetails] = useState(true);
   const [includeMissing, setIncludeMissing] = useState(false);
+  const [threshold, setThreshold] = useState("");
+  const [dryRun, setDryRun] = useState(false);
   const [estimate, setEstimate] = useState<{ key: string; data: Estimate | null; error: string | null } | null>(null);
   const [error, setError] = useState<{ message: string; jobId?: number } | null>(null);
   const requestId = useRef(0);
@@ -114,7 +123,7 @@ export function TaskDialog({
   const scopes: { value: Scope; label: string }[] = [
     { value: "all", label: "Whole catalog" },
     { value: "category", label: "One category" },
-    ...(task === "matching" || task === "api_price_refresh" ? [] : [{ value: "retry" as const, label: "Failed pages of a run" }]),
+    ...(task === "matching" || task === "api_price_refresh" || task === "ai_review" ? [] : [{ value: "retry" as const, label: "Failed pages of a run" }]),
   ];
 
   // The options, or what is wrong with the form.
@@ -131,6 +140,13 @@ export function TaskDialog({
       return { options };
     }
     if (task === "matching") return { options: { ...options, mode, reembed } };
+    if (task === "ai_review") {
+      const max = numberField(limit);
+      const certainty = threshold.trim() === "" ? undefined : Number(threshold);
+      if (Number.isNaN(max) || max === 0) return { invalid: "Advanced options: the number of matches must be at least 1." };
+      if (certainty !== undefined && !(certainty >= 0.5 && certainty <= 1)) return { invalid: "Advanced options: the certainty must be between 0.5 and 1." };
+      return { options: { ...options, limit: max, threshold: certainty, dryRun } };
+    }
     const numbers =
       task === "catalog_sync"
         ? { maxProducts: numberField(maxProducts), resumeWithinHours: numberField(resumeWithinHours, false) }
@@ -274,6 +290,13 @@ export function TaskDialog({
                     <NumberField id="limit" label="At most … products" value={limit} onChange={setLimit} placeholder="All" />
                     <CheckField id="update-details" checked={updateDetails} onChange={setUpdateDetails} label="Also re-read descriptions, characteristics and images (no extra request)" />
                     <CheckField id="include-missing" checked={includeMissing} onChange={setIncludeMissing} label="Include the products flagged missing" />
+                  </>
+                ) : null}
+                {task === "ai_review" ? (
+                  <>
+                    <NumberField id="threshold" label="Certainty Jev needs to decide alone (0.5 – 1)" value={threshold} onChange={setThreshold} placeholder="0.75" step="0.01" hint="Below it the match stays for a human, with Jev's suggestion in its history." />
+                    <NumberField id="limit" label="At most … matches" value={limit} onChange={setLimit} placeholder="All" />
+                    <CheckField id="dry-run" checked={dryRun} onChange={setDryRun} label="Suggestions only: record Jev's answers, decide nothing" />
                   </>
                 ) : null}
                 {task === "api_price_refresh" ? (

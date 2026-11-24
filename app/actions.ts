@@ -81,6 +81,21 @@ function taskOptions(task: TaskName, o: TaskOptions): { options: Record<string, 
       },
     };
   }
+  if (task === "ai_review") {
+    if (o.retryFailedRunId !== undefined) return { error: "A Jev review has no failed pages to retry." };
+    if (o.limit !== undefined && !isPositiveInt(o.limit)) return { error: "Invalid number of matches." };
+    if (o.threshold !== undefined && !(typeof o.threshold === "number" && o.threshold >= 0.5 && o.threshold <= 1)) return { error: "The certainty threshold must be between 0.5 and 1." };
+    if (o.productIds !== undefined && !(Array.isArray(o.productIds) && o.productIds.length <= 5000 && o.productIds.every(isPositiveInt))) return { error: "Invalid products." };
+    return {
+      options: {
+        category_id: o.categoryId,
+        product_ids: o.productIds?.length ? o.productIds : undefined,
+        limit: o.limit,
+        threshold: o.threshold,
+        dry_run: o.dryRun === true ? true : undefined,
+      },
+    };
+  }
   if (task === "api_price_refresh") {
     if (o.retryFailedRunId !== undefined) return { error: "API prices have no failed pages to retry." };
     if (o.limit !== undefined && !isPositiveInt(o.limit)) return { error: "Invalid number of products." };

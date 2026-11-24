@@ -14,7 +14,7 @@ export type CategoryStatus = "active" | "missing";
 // categories (promotions, pallet sales...); it can sit below a main category.
 export type CategoryRole = "main" | "extra";
 export type ProductStatus = "active" | "missing";
-export type TaskName = "catalog_sync" | "price_refresh" | "matching" | "api_price_refresh";
+export type TaskName = "catalog_sync" | "price_refresh" | "matching" | "api_price_refresh" | "ai_review";
 export type JobStatus =
   | "queued"
   | "running"
@@ -47,7 +47,8 @@ export type TaskUnavailableReason =
   | "matching_not_configured"
   | "reference_catalog_required"
   | "api_pricing_unsupported"
-  | "api_pricing_not_configured";
+  | "api_pricing_not_configured"
+  | "ai_review_not_configured";
 
 export type Health = {
   status: "ok" | "degraded";
@@ -466,7 +467,7 @@ export type DeprecatedReason =
   | "antalis_product_missing"
   | "antalis_product_deleted"
   | "reset_requested";
-export type MatchEventKind = "computed" | "recomputed" | "validated" | "rejected" | "deprecated" | "reset";
+export type MatchEventKind = "computed" | "recomputed" | "validated" | "rejected" | "deprecated" | "reset" | "ai_reviewed";
 export type MatchingMode = "incremental" | "deprecated" | "all";
 export type MatchSort = "score" | "score_gap" | "updated_at" | "computed_at" | "decided_at" | "deprecated_at" | "title" | "id";
 
@@ -514,6 +515,8 @@ export type MatchListItem = {
   dimensions_compared: boolean;
   decision_reasons: Reason[];
   decided_by: string | null;
+  // Decided by a bot (decided_by "bot:<model>", e.g. a Jev review).
+  decided_by_bot?: boolean;
   decided_at: string | null;
   decision_comment: string | null;
   manual_choice: boolean;

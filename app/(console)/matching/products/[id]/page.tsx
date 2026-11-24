@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CircleCheckIcon, UserCheckIcon, UserXIcon } from "lucide-react";
+import { BotIcon, CircleCheckIcon, UserCheckIcon, UserXIcon } from "lucide-react";
+import { startWorker } from "@/app/actions";
+import { ActionButton } from "@/components/action-button";
 import { CandidateCard } from "@/components/candidate-card";
 import { DecisionBar } from "@/components/decision-panel";
 import { FilterBar, FilterSearch } from "@/components/filters";
@@ -169,6 +171,19 @@ export default async function MatchReviewPage({ params, searchParams }: { params
               <ScoreRing score={shownScore} thresholds={thresholds} size={34} />
             </span>
             <SessionCounter />
+            {match.status === "needs_review" ? (
+              <ActionButton
+                action={startWorker}
+                input={{ key: match.competitor_key, task: "ai_review", options: { productIds: [match.product.id] } }}
+                label="Ask Jev"
+                icon={<BotIcon />}
+                pendingLabel="Starting…"
+                variant="outline"
+                title="Send this match and its 5 best candidates to Jev: it decides alone when it is certain enough (signed bot:jev-latest)"
+                successMessage="Jev review started"
+                followResult
+              />
+            ) : null}
           </>
         }
       />
@@ -427,6 +442,7 @@ function HumanDecision({ match }: { match: MatchDetail }) {
           <span className="font-medium">
             {rejected ? "Rejected" : "Validated"} by {match.decided_by ?? "someone"}
           </span>
+          {match.decided_by_bot ? <span className="ml-1.5 rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold text-violet-800">Bot</span> : null}
           {match.decided_at ? <span className="text-muted-foreground"> · {formatDateTime(match.decided_at)}</span> : null}
         </p>
         {note ? <p className="text-muted-foreground">{match.decision_comment ? `“${note}”` : note}</p> : null}

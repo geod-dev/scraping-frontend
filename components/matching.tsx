@@ -194,6 +194,7 @@ const EVENT_TONES: Record<MatchEventKind, "neutral" | "info" | "success" | "dang
   rejected: "danger",
   deprecated: "violet",
   reset: "neutral",
+  ai_reviewed: "violet",
 };
 
 // Timeline of match events, newest first. `showProduct` adds the product (global history).

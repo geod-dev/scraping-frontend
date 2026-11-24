@@ -59,7 +59,7 @@ export const DECISION_REASON_LABELS: Record<string, string> = {
   previous_association_changed: "Previous association changed",
 };
 
-export const MATCH_EVENTS: readonly MatchEventKind[] = ["computed", "recomputed", "validated", "rejected", "deprecated", "reset"];
+export const MATCH_EVENTS: readonly MatchEventKind[] = ["computed", "recomputed", "validated", "rejected", "deprecated", "reset", "ai_reviewed"];
 
 export const MATCH_EVENT_LABELS: Record<MatchEventKind, string> = {
   computed: "Computed",
@@ -68,6 +68,7 @@ export const MATCH_EVENT_LABELS: Record<MatchEventKind, string> = {
   rejected: "Rejected",
   deprecated: "Became obsolete",
   reset: "Sent back to the engine",
+  ai_reviewed: "Reviewed by Jev",
 };
 
 export const MATCHING_MODES: { mode: MatchingMode; label: string; description: string }[] = [
@@ -91,6 +92,7 @@ export const TASK_UNAVAILABLE_LABELS: Record<TaskUnavailableReason, string> = {
   matching_not_configured: "Matching is not configured on the server (no Voyage API key)",
   api_pricing_unsupported: "This competitor has no pricing API",
   api_pricing_not_configured: "The pricing API credentials are not set on the server (ANTALIS_API_USER / ANTALIS_API_PASSWORD)",
+  ai_review_not_configured: "Jev review is not configured on the server (TYPESAFE_API_KEY)",
 };
 
 export const MATCH_SORTS = ["score", "score_gap", "updated_at", "computed_at", "decided_at", "deprecated_at", "title", "id"] as const;

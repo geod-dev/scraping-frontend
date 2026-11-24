@@ -16,6 +16,10 @@ export type TaskOptions = {
   updateDetails?: boolean;
   includeMissing?: boolean;
   limit?: number;
+  // Jev review of the matches waiting for a human.
+  productIds?: number[];
+  threshold?: number;
+  dryRun?: boolean;
   // Matching.
   mode?: MatchingMode;
   reembed?: boolean;
@@ -50,4 +54,5 @@ export const TASK_LABELS: Record<TaskName, string> = {
   price_refresh: "Price refresh",
   matching: "Matching",
   api_price_refresh: "API prices",
+  ai_review: "Jev review",
 };

@@ -336,6 +336,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ApiPriceRefreshJobIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AiReviewJobIn"
                   }
                 ],
                 "examples": [
@@ -617,6 +620,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ApiPriceRefreshJobIn"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AiReviewJobIn"
                   }
                 ],
                 "examples": [
@@ -707,7 +713,8 @@
                     "catalog_sync",
                     "price_refresh",
                     "matching",
-                    "api_price_refresh"
+                    "api_price_refresh",
+                    "ai_review"
                   ],
                   "type": "string"
                 },
@@ -4600,10 +4607,28 @@
                   "type": "null"
                 }
               ],
-              "description": "true = decided by a human",
+              "description": "true = decided by a human or a bot",
               "title": "Decided"
             },
-            "description": "true = decided by a human"
+            "description": "true = decided by a human or a bot"
+          },
+          {
+            "name": "decided_by_bot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true = decided by a bot (Jev review), false = not by a bot",
+              "title": "Decided By Bot"
+            },
+            "description": "true = decided by a bot (Jev review), false = not by a bot"
           },
           {
             "name": "manual_choice",
@@ -4927,10 +4952,28 @@
                   "type": "null"
                 }
               ],
-              "description": "true = decided by a human",
+              "description": "true = decided by a human or a bot",
               "title": "Decided"
             },
-            "description": "true = decided by a human"
+            "description": "true = decided by a human or a bot"
+          },
+          {
+            "name": "decided_by_bot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true = decided by a bot (Jev review), false = not by a bot",
+              "title": "Decided By Bot"
+            },
+            "description": "true = decided by a bot (Jev review), false = not by a bot"
           },
           {
             "name": "manual_choice",
@@ -5282,10 +5325,28 @@
                   "type": "null"
                 }
               ],
-              "description": "true = decided by a human",
+              "description": "true = decided by a human or a bot",
               "title": "Decided"
             },
-            "description": "true = decided by a human"
+            "description": "true = decided by a human or a bot"
+          },
+          {
+            "name": "decided_by_bot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true = decided by a bot (Jev review), false = not by a bot",
+              "title": "Decided By Bot"
+            },
+            "description": "true = decided by a bot (Jev review), false = not by a bot"
           },
           {
             "name": "manual_choice",
@@ -5455,7 +5516,8 @@
                       "validated",
                       "rejected",
                       "deprecated",
-                      "reset"
+                      "reset",
+                      "ai_reviewed"
                     ],
                     "type": "string"
                   }
@@ -6575,6 +6637,79 @@
   },
   "components": {
     "schemas": {
+      "AiReviewJobIn": {
+        "properties": {
+          "task": {
+            "type": "string",
+            "const": "ai_review",
+            "title": "Task"
+          },
+          "options": {
+            "$ref": "#/components/schemas/AiReviewOptionsIn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "title": "AiReviewJobIn"
+      },
+      "AiReviewOptionsIn": {
+        "properties": {
+          "product_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Product Ids",
+            "description": "only these competitor products (their match must be needs_review)"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id",
+            "description": "only the products of this category and its sub-categories"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "at most N matches, best engine score first"
+          },
+          "threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.5,
+            "title": "Threshold",
+            "description": "probability Jev needs to decide alone: validate when its choice and 'a candidate is the same product' are both >= threshold; reject when 'none' is >= threshold and 'a candidate is the same product' <= 1 - threshold. Otherwise the match stays for a human with Jev's suggestion in its history",
+            "default": 0.75
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "ask Jev and record its suggestions, decide nothing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AiReviewOptionsIn",
+        "description": "Options of a Jev review of the matches waiting for a human (``needs_review``). Leave everything\nempty to review the whole queue of the competitor."
+      },
       "ApiPriceOut": {
         "properties": {
           "id": {
@@ -8857,7 +8992,8 @@
               "catalog_sync",
               "price_refresh",
               "matching",
-              "api_price_refresh"
+              "api_price_refresh",
+              "ai_review"
             ],
             "title": "Task"
           },
@@ -9109,7 +9245,8 @@
               "catalog_sync",
               "price_refresh",
               "matching",
-              "api_price_refresh"
+              "api_price_refresh",
+              "ai_review"
             ],
             "title": "Task"
           },
@@ -9605,6 +9742,12 @@
             ],
             "title": "Decided By"
           },
+          "decided_by_bot": {
+            "type": "boolean",
+            "title": "Decided By Bot",
+            "description": "decided by a bot (decided_by 'bot:<model>', e.g. Jev review)",
+            "default": false
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -9819,7 +9962,8 @@
               "validated",
               "rejected",
               "deprecated",
-              "reset"
+              "reset",
+              "ai_reviewed"
             ],
             "title": "Event"
           },
@@ -10074,6 +10218,12 @@
             ],
             "title": "Decided By"
           },
+          "decided_by_bot": {
+            "type": "boolean",
+            "title": "Decided By Bot",
+            "description": "decided by a bot (decided_by 'bot:<model>', e.g. Jev review)",
+            "default": false
+          },
           "decided_at": {
             "anyOf": [
               {
@@ -10244,7 +10394,8 @@
                   "matching_not_configured",
                   "reference_catalog_required",
                   "api_pricing_unsupported",
-                  "api_pricing_not_configured"
+                  "api_pricing_not_configured",
+                  "ai_review_not_configured"
                 ]
               },
               {
@@ -13920,7 +14071,8 @@
                   "matching_not_configured",
                   "reference_catalog_required",
                   "api_pricing_unsupported",
-                  "api_pricing_not_configured"
+                  "api_pricing_not_configured",
+                  "ai_review_not_configured"
                 ]
               },
               {

@@ -42,7 +42,8 @@ export function MatchFilters({ kind, filters, competitors, categories }: { kind:
     { name: "antalis_product_id", label: "Antalis product", format: (v) => `#${v}` },
     { name: "min_score", label: "Score ≥" },
     { name: "max_score", label: "Score ≤" },
-    { name: "decided", label: "Decision", format: yesNo("By a human", "Engine only") },
+    { name: "decided", label: "Decision", format: yesNo("Decided", "Engine only") },
+    { name: "decided_by_bot", label: "Reviewer", format: yesNo("Jev (bot)", "Not a bot") },
     { name: "manual_choice", label: "Choice", format: yesNo("Other than proposed", "Proposal kept") },
     { name: "reason", label: "Reason", format: (v) => decisionReasonLabel(v) },
     { name: "deprecated_reason", label: "Obsolete because", format: (v) => DEPRECATED_REASON_LABELS[v as DeprecatedReason] ?? v },
@@ -100,7 +101,10 @@ export function MatchFilters({ kind, filters, competitors, categories }: { kind:
           {kind !== "review" ? (
             <>
               <FilterField label="Decided by">
-                <FilterToggle name="decided" label="Decided by" options={[{ value: "1", label: "A human" }, { value: "0", label: "The engine" }]} />
+                <FilterToggle name="decided" label="Decided by" options={[{ value: "1", label: "A reviewer" }, { value: "0", label: "The engine" }]} />
+              </FilterField>
+              <FilterField label="Reviewer" hint="Decisions made by the Jev review are signed bot:jev-latest">
+                <FilterToggle name="decided_by_bot" label="Reviewer" options={[{ value: "1", label: "Jev (bot)" }, { value: "0", label: "Not a bot" }]} />
               </FilterField>
               <FilterField label="Choice">
                 <FilterToggle name="manual_choice" label="Choice" options={[{ value: "0", label: "Proposal kept" }, { value: "1", label: "Other product" }]} />
@@ -141,7 +145,7 @@ function StatusNote({ match: m }: { match: MatchListItem }) {
   if (m.status === "deprecated") {
     note = `was ${m.previous_status ? MATCH_STATUS_LABELS[m.previous_status] : "—"}${m.deprecated_reason ? ` · ${DEPRECATED_REASON_LABELS[m.deprecated_reason]}` : ""}`;
   } else if (m.decided_by) {
-    note = `by ${m.decided_by}${m.decision_comment ? ` · “${m.decision_comment}”` : ""}`;
+    note = `by ${m.decided_by_bot ? `🤖 ${m.decided_by}` : m.decided_by}${m.decision_comment ? ` · “${m.decision_comment}”` : ""}`;
   } else {
     const flagged = m.decision_reasons.filter((r) => !STATUS_REASONS.has(r.code));
     note = flagged.length > 0 ? flagged.map((r) => decisionReasonLabel(r.code, r.message)).join(" · ") : null;
